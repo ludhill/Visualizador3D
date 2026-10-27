@@ -89,6 +89,32 @@
       function tocarAudio() {
         audio.play();
       }
+      document.addEventListener("DOMContentLoaded", () => {
+      console.log("🟢 [FRONT] DOM carregado. Inicializando cena AR...");
+
+      const sceneEl = document.querySelector("a-scene");
+      const targetEl = document.querySelector("#meu-target"); // Substitua pelo ID do seu a-entity do target
+
+      // Evento: Quando a cena do A-Frame/MindAR terminar de carregar
+      sceneEl.addEventListener("loaded", () => {
+        console.log("🟢 [FRONT] Cena A-Frame/MindAR totalmente carregada!");
+      });
+
+      // Evento: Quando a câmera detectar o alvo visual (targets.mind)
+      targetEl.addEventListener("targetFound", () => {
+        console.log("🎯 [FRONT] Alvo visual DETECTADO! Exibindo modelo 3D...");
+      });
+
+      // Evento: Quando o alvo sair do campo de visão da câmera
+      targetEl.addEventListener("targetLost", () => {
+        console.warn("⚠️ [FRONT] Alvo visual PERDIDO!");
+      });
+
+      // Captura de erro genérico na permissão ou carregamento de mídia
+      sceneEl.addEventListener("arError", (event) => {
+        console.error("❌ [FRONT] Erro no MindAR/Câmera:", event.detail);
+      });
+    });
     </script>
   </body>
 </html>
