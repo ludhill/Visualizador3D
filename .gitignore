@@ -1,0 +1,12 @@
+# Certificados SSL / HTTPS locais (OpenSSL / mkcert)
+*.pem
+*-key.pem
+
+# Dependências e ficheiros do sistema
+node_modules/
+__pycache__/
+*.pyc
+
+# Configurações do ambiente de desenvolvimento
+.vscode/
+.DS_Store

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+    <style>
+      /* Interface flutuante (Overlay) */
+      #ui-container {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9999;
+        display: none; /* Inicia oculto até achar a imagem */
+        gap: 10px;
+        background: rgba(0,0,0,0.7);
+        padding: 12px 20px;
+        border-radius: 30px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 20px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Controles Flutuantes -->
+    <div id="ui-container">
+      <button onclick="mudarSlide()">Alternar Modelo (Slide)</button>
+      <button onclick="tocarAudio()">🔊 Áudio</button>
+    </div>
+
+    <!-- Cena 3D -->
+    <a-scene mindar-image="imageTargetSrc: ./targets.mind;" color-space="sRGB" renderer="colorManagement: true" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+      <a-assets>
+        <a-asset-item id="mod1" src="./modelo1.glb"></a-asset-item>
+        <a-asset-item id="mod2" src="./modelo2.glb"></a-asset-item>
+        <audio id="som" src="./audio.mp3" preload="auto"></audio>
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <a-entity mindar-image-target="targetIndex: 0" id="ancora">
+        <!-- Modelo 1 (Inicia Visível) -->
+        <a-gltf-model id="3d-modelo1" src="#mod1" position="0 0 0.1" scale="0.5 0.5 0.5" visible="true"></a-gltf-model>
+        <!-- Modelo 2 (Inicia Oculto) -->
+        <a-gltf-model id="3d-modelo2" src="#mod2" position="0 0 0.1" scale="0.5 0.5 0.5" visible="false"></a-gltf-model>
+      </a-entity>
+    </a-scene>
+
+    <script>
+      const ancora = document.querySelector('#ancora');
+      const ui = document.querySelector('#ui-container');
+      const mod1 = document.querySelector('#3d-modelo1');
+      const mod2 = document.querySelector('#3d-modelo2');
+      const audio = document.querySelector('#som');
+      let slideAtual = 1;
+
+      // Mostra a UI quando a câmera detecta a figura na parede
+      ancora.addEventListener("targetFound", () => {
+        ui.style.display = "flex";
+      });
+
+      // Esconde a UI quando perde a figura
+      ancora.addEventListener("targetLost", () => {
+        ui.style.display = "none";
+        audio.pause();
+      });
+
+      // Alterna entre os modelos 3D (Lógica do Slide)
+      function mudarSlide() {
+        if (slideAtual === 1) {
+          mod1.setAttribute('visible', 'false');
+          mod2.setAttribute('visible', 'true');
+          slideAtual = 2;
+        } else {
+          mod1.setAttribute('visible', 'true');
+          mod2.setAttribute('visible', 'false');
+          slideAtual = 1;
+        }
+      }
+
+      function tocarAudio() {
+        audio.play();
+      }
+    </script>
+  </body>
+</html>
