@@ -1,120 +1,177 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
-    <style>
-      /* Interface flutuante (Overlay) */
-      #ui-container {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 9999;
-        display: none; /* Inicia oculto até achar a imagem */
-        gap: 10px;
-        background: rgba(0,0,0,0.7);
-        padding: 12px 20px;
-        border-radius: 30px;
-      }
-      button {
-        background: #007bff;
-        color: white;
-        border: none;
-        padding: 10px 18px;
-        border-radius: 20px;
-        font-weight: bold;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- Controles Flutuantes -->
-    <div id="ui-container">
-      <button onclick="mudarSlide()">Alternar Modelo (Slide)</button>
-      <button onclick="tocarAudio()">🔊 Áudio</button>
-    </div>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>WebAR Local-First MVP</title>
 
-    <!-- Cena 3D -->
-    <a-scene mindar-image="imageTargetSrc: ./targets.mind;" color-space="sRGB" renderer="colorManagement: true" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
-      <a-assets>
-        <a-asset-item id="mod1" src="./modelo1.glb"></a-asset-item>
-        <a-asset-item id="mod2" src="./modelo2.glb"></a-asset-item>
-        <audio id="som" src="./audio.mp3" preload="auto"></audio>
-      </a-assets>
+  <!-- Libs A-Frame e MindAR -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  <style>
+    /* Interface Flutuante sobre o WebAR */
+    #ui-container {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      display: flex;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 15px;
+      border-radius: 30px;
+      backdrop-filter: blur(5px);
+    }
 
-      <a-entity mindar-image-target="targetIndex: 0" id="ancora">
-        <!-- Modelo 1 (Inicia Visível) -->
-        <a-gltf-model id="3d-modelo1" src="#mod1" position="0 0 0.1" scale="0.5 0.5 0.5" visible="true"></a-gltf-model>
-        <!-- Modelo 2 (Inicia Oculto) -->
-        <a-gltf-model id="3d-modelo2" src="#mod2" position="0 0 0.1" scale="0.5 0.5 0.5" visible="false"></a-gltf-model>
-      </a-entity>
-    </a-scene>
+    .btn-ar {
+      background: #ffffff;
+      color: #111111;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-weight: bold;
+      font-size: 14px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      user-select: none;
+    }
 
-    <script>
-      const ancora = document.querySelector('#ancora');
-      const ui = document.querySelector('#ui-container');
-      const mod1 = document.querySelector('#3d-modelo1');
-      const mod2 = document.querySelector('#3d-modelo2');
-      const audio = document.querySelector('#som');
-      let slideAtual = 1;
+    .btn-ar:active {
+      transform: scale(0.95);
+      background: #dddddd;
+    }
+  </style>
 
-      // Mostra a UI quando a câmera detecta a figura na parede
-      ancora.addEventListener("targetFound", () => {
-        ui.style.display = "flex";
-      });
+  <script>
+    // --- ARRAY CONFIGURÁVEL DE MODELOS ---
+    // Adicione novos caminhos de arquivos .glb aqui conforme a necessidade
+    window.MODELOS = [
+      './modelo1.glb',
+      './modelo2.glb'
+    ];
+    window.indiceModeloAtual = 0;
 
-      // Esconde a UI quando perde a figura
-      ancora.addEventListener("targetLost", () => {
-        ui.style.display = "none";
-        audio.pause();
-      });
+    // --- COMPONENTE DE GESTOS (ROTAÇÃO E ZOOM NA TELA) ---
+    AFRAME.registerComponent('gesture-handler', {
+      init: function () {
+        this.touchStart = { x: 0, y: 0 };
+        this.initialPinchDistance = null;
+        this.initialScale = { x: 0.1, y: 0.1, z: 0.1 };
 
-      // Alterna entre os modelos 3D (Lógica do Slide)
-      function mudarSlide() {
-        if (slideAtual === 1) {
-          mod1.setAttribute('visible', 'false');
-          mod2.setAttribute('visible', 'true');
-          slideAtual = 2;
-        } else {
-          mod1.setAttribute('visible', 'true');
-          mod2.setAttribute('visible', 'false');
-          slideAtual = 1;
+        this.el.sceneEl.addEventListener('touchstart', this.onTouchStart.bind(this));
+        this.el.sceneEl.addEventListener('touchmove', this.onTouchMove.bind(this));
+      },
+
+      onTouchStart: function (e) {
+        if (e.touches.length === 1) {
+          this.touchStart.x = e.touches[0].clientX;
+          this.touchStart.y = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          this.initialPinchDistance = Math.hypot(dx, dy);
+          this.initialScale = Object.assign({}, this.el.getAttribute('scale'));
+        }
+      },
+
+      onTouchMove: function (e) {
+        // 1 Dedo: Rotação nos eixos X e Y
+        if (e.touches.length === 1) {
+          const deltaX = e.touches[0].clientX - this.touchStart.x;
+          const deltaY = e.touches[0].clientY - this.touchStart.y;
+
+          const rotation = this.el.getAttribute('rotation');
+          this.el.setAttribute('rotation', {
+            x: rotation.x + deltaY * 0.5,
+            y: rotation.y + deltaX * 0.5,
+            z: rotation.z
+          });
+
+          this.touchStart.x = e.touches[0].clientX;
+          this.touchStart.y = e.touches[0].clientY;
+        }
+        // 2 Dedos: Zoom / Escala
+        else if (e.touches.length === 2 && this.initialPinchDistance) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const currentDistance = Math.hypot(dx, dy);
+          const factor = currentDistance / this.initialPinchDistance;
+
+          this.el.setAttribute('scale', {
+            x: Math.max(0.005, this.initialScale.x * factor),
+            y: Math.max(0.005, this.initialScale.y * factor),
+            z: Math.max(0.005, this.initialScale.z * factor)
+          });
         }
       }
-
-      function tocarAudio() {
-        audio.play();
-      }
-      document.addEventListener("DOMContentLoaded", () => {
-      console.log("🟢 [FRONT] DOM carregado. Inicializando cena AR...");
-
-      const sceneEl = document.querySelector("a-scene");
-      const targetEl = document.querySelector("#meu-target"); // Substitua pelo ID do seu a-entity do target
-
-      // Evento: Quando a cena do A-Frame/MindAR terminar de carregar
-      sceneEl.addEventListener("loaded", () => {
-        console.log("🟢 [FRONT] Cena A-Frame/MindAR totalmente carregada!");
-      });
-
-      // Evento: Quando a câmera detectar o alvo visual (targets.mind)
-      targetEl.addEventListener("targetFound", () => {
-        console.log("🎯 [FRONT] Alvo visual DETECTADO! Exibindo modelo 3D...");
-      });
-
-      // Evento: Quando o alvo sair do campo de visão da câmera
-      targetEl.addEventListener("targetLost", () => {
-        console.warn("⚠️ [FRONT] Alvo visual PERDIDO!");
-      });
-
-      // Captura de erro genérico na permissão ou carregamento de mídia
-      sceneEl.addEventListener("arError", (event) => {
-        console.error("❌ [FRONT] Erro no MindAR/Câmera:", event.detail);
-      });
     });
-    </script>
-  </body>
+
+    // --- CONTROLES DE INTERFACE (TROCA E RESET) ---
+    function trocarModelo(direcao) {
+      window.indiceModeloAtual += direcao;
+      if (window.indiceModeloAtual < 0) window.indiceModeloAtual = window.MODELOS.length - 1;
+      if (window.indiceModeloAtual >= window.MODELOS.length) window.indiceModeloAtual = 0;
+
+      const modelEntity = document.querySelector('#target-model');
+      const novoSrc = window.MODELOS[window.indiceModeloAtual];
+      
+      modelEntity.setAttribute('gltf-model', novoSrc);
+      resetarTransformacoes();
+    }
+
+    function girar180() {
+      const modelEntity = document.querySelector('#target-model');
+      const rot = modelEntity.getAttribute('rotation');
+      modelEntity.setAttribute('rotation', { x: rot.x, y: rot.y + 180, z: rot.z });
+    }
+
+    function resetarTransformacoes() {
+      const modelEntity = document.querySelector('#target-model');
+      modelEntity.setAttribute('rotation', '0 0 0');
+      modelEntity.setAttribute('position', '0 0 0');
+      modelEntity.setAttribute('scale', '0.1 0.1 0.1');
+    }
+  </script>
+</head>
+<body>
+
+  <!-- INTERFACE UI -->
+  <div id="ui-container">
+    <button class="btn-ar" onclick="trocarModelo(-1)">◀ Anterior</button>
+    <button class="btn-ar" onclick="girar180()">🔄 180°</button>
+    <button class="btn-ar" onclick="resetarTransformacoes()">🎯 Reset</button>
+    <button class="btn-ar" onclick="trocarModelo(1)">Próximo ▶</button>
+  </div>
+
+  <!-- CENA WEBAR -->
+  <a-scene 
+    mindar-image="imageTargetSrc: ./targets.mind;" 
+    color-space="sRGB" 
+    renderer="colorManagement: true, physicallyCorrectLights" 
+    vr-mode-ui="enabled: false" 
+    device-orientation-permission-ui="enabled: false">
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- ILUMINAÇÃO PBR -->
+    <a-light type="ambient" intensity="1.5"></a-light>
+    <a-light type="directional" position="1 2 1" intensity="1"></a-light>
+
+    <!-- ENTIDADE ANCORADA NO TARGET -->
+    <a-entity mindar-image-target="targetIndex: 0">
+      <a-gltf-model 
+        id="target-model"
+        src="./modelo1.glb" 
+        position="0 0 0" 
+        scale="0.1 0.1 0.1" 
+        rotation="0 0 0"
+        gesture-handler>
+      </a-gltf-model>
+    </a-entity>
+
+  </a-scene>
+
+</body>
 </html>
