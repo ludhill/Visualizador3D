@@ -1,0 +1,149 @@
+{
+  "totalSessions": 4,
+  "targetViews": {
+    "0": 13
+  },
+  "logs": [
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T07:22:32.401Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:22:35.991Z",
+      "sessionDurationSeconds": 3,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:22:40.363Z",
+      "sessionDurationSeconds": 7,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T07:22:56.257Z",
+      "sessionDurationSeconds": 23
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T07:27:00.620Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:27:09.965Z",
+      "sessionDurationSeconds": 9,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:27:14.323Z",
+      "sessionDurationSeconds": 13,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:27:26.671Z",
+      "sessionDurationSeconds": 26,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:27:36.627Z",
+      "sessionDurationSeconds": 36,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:27:37.764Z",
+      "sessionDurationSeconds": 37,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "session_sleep",
+      "timestamp": "2026-11-01T07:27:44.203Z",
+      "sessionDurationSeconds": 43
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T07:27:45.921Z",
+      "sessionDurationSeconds": 45
+    },
+    {
+      "event": "session_wake",
+      "timestamp": "2026-11-01T07:27:45.922Z",
+      "sessionDurationSeconds": 45
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T07:27:52.305Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:27:54.459Z",
+      "sessionDurationSeconds": 2,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:28:04.338Z",
+      "sessionDurationSeconds": 12,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T07:28:09.847Z",
+      "sessionDurationSeconds": 17
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T07:28:10.316Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:28:13.966Z",
+      "sessionDurationSeconds": 3,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:28:34.257Z",
+      "sessionDurationSeconds": 23,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:28:42.946Z",
+      "sessionDurationSeconds": 32,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-01T07:29:13.820Z",
+      "sessionDurationSeconds": 63,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T07:29:37.163Z",
+      "sessionDurationSeconds": 86
+    }
+  ]
+}

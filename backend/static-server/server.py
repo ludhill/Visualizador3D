@@ -12,6 +12,7 @@ PORT = 8080
 # Diretório raiz do projeto (2 níveis acima de backend/static-server)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 JSON_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'data.json')
+TELEMETRY_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'telemetry.json')
 
 
 class CMSRequestHandler(SimpleHTTPRequestHandler):
@@ -57,13 +58,11 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         """
         Trata as requisições GET (APIs, ativos 3D e arquivos estáticos da interface).
         """
-        # Separa o caminho do arquivo dos parâmetros de URL (?token=...)
         clean_path = self.path.split('?')[0]
 
         # ----------------------------------------------------------------------
-        # 1. Proteção de Segurança: APIs e Modelos 3D (.glb)
+        # Proteção de Segurança: APIs e Modelos 3D (.glb)
         # ----------------------------------------------------------------------
-        # Mantém a extensão .mind livre para inicialização imediata do MindAR no HTML
         if clean_path.startswith('/api/') or clean_path.endswith('.glb'):
             if not self.check_authorization():
                 self.send_response(403)
@@ -77,7 +76,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 return
 
         # ----------------------------------------------------------------------
-        # 2. Rota de API: Retorna a configuração do data.json
+        # Rota de API: Retorna a configuração do data.json
         # ----------------------------------------------------------------------
         if clean_path == '/api/config':
             if os.path.exists(JSON_PATH):
@@ -95,17 +94,32 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             return
 
         # ----------------------------------------------------------------------
-        # 3. Entrega Padrão de Arquivos Estáticos (HTML, JS, CSS, .mind, imagens)
+        # Rota de API: Retorna o relatório de Telemetria (NOVO)
+        # ----------------------------------------------------------------------
+        if clean_path == '/api/telemetry':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            if os.path.exists(TELEMETRY_PATH):
+                with open(TELEMETRY_PATH, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                empty_data = {"totalSessions": 0, "targetViews": {}, "logs": []}
+                self.wfile.write(json.dumps(empty_data).encode('utf-8'))
+            return
+
+        # ----------------------------------------------------------------------
+        # Entrega Padrão de Arquivos Estáticos (HTML, JS, CSS, .mind, imagens)
         # ----------------------------------------------------------------------
         return super().do_GET()
 
     def do_POST(self):
         """
-        Trata as requisições POST (Escrita no data.json pelo Dashboard CMS).
+        Trata as requisições POST (Escrita no data.json e registro de Telemetria).
         """
         clean_path = self.path.split('?')[0]
 
-        # Valida token também para operações de atualização na API
+        # Exige validação de Token para chamadas de API
         if clean_path.startswith('/api/'):
             if not self.check_authorization():
                 self.send_response(403)
@@ -115,24 +129,72 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps(response).encode('utf-8'))
                 return
 
-        # Rota para salvar novas configurações enviadas pelo CMS
-        if clean_path == '/api/config':
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
 
+        # ----------------------------------------------------------------------
+        # Rota de Atualização do CMS (/api/config)
+        # ----------------------------------------------------------------------
+        if clean_path == '/api/config':
             try:
                 parsed_json = json.loads(post_data.decode('utf-8'))
-
-                # Garante que a pasta storage/db/ exista antes de gravar
                 os.makedirs(os.path.dirname(JSON_PATH), exist_ok=True)
-
                 with open(JSON_PATH, 'w', encoding='utf-8') as f:
                     json.dump(parsed_json, f, indent=2, ensure_ascii=False)
 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "Configuração salva com sucesso!"}).encode('utf-8'))
+                self.wfile.write(json.dumps({"status": "success", "message": "Configuração salva!"}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+            return
+
+        # ----------------------------------------------------------------------
+        # Rota de Telemetria Local (/api/telemetry)
+        # ----------------------------------------------------------------------
+        if clean_path == '/api/telemetry':
+            try:
+                event_data = json.loads(post_data.decode('utf-8'))
+                os.makedirs(os.path.dirname(TELEMETRY_PATH), exist_ok=True)
+
+                telemetry_store = {
+                    "totalSessions": 0,
+                    "targetViews": {},
+                    "logs": []
+                }
+
+                if os.path.exists(TELEMETRY_PATH):
+                    try:
+                        with open(TELEMETRY_PATH, 'r', encoding='utf-8') as f:
+                            telemetry_store = json.load(f)
+                    except Exception:
+                        pass
+
+                event_type = event_data.get("event")
+                
+                if event_type == "session_start":
+                    telemetry_store["totalSessions"] = telemetry_store.get("totalSessions", 0) + 1
+                elif event_type == "target_found":
+                    target_idx = str(event_data.get("targetIndex", "unknown"))
+                    views = telemetry_store.get("targetViews", {})
+                    views[target_idx] = views.get(target_idx, 0) + 1
+                    telemetry_store["targetViews"] = views
+
+                telemetry_store["logs"].append(event_data)
+                if len(telemetry_store["logs"]) > 100:
+                    telemetry_store["logs"] = telemetry_store["logs"][-100:]
+
+                with open(TELEMETRY_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(telemetry_store, f, indent=2, ensure_ascii=False)
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "recorded"}).encode('utf-8'))
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json')
