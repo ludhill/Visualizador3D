@@ -2,11 +2,18 @@
 *.pem
 *-key.pem
 
-# Dependências e ficheiros do sistema
-node_modules/
+# Ambientes virtuais e dependências Python
+venv/
+.venv/
+env/
 __pycache__/
 *.pyc
 
-# Configurações do ambiente de desenvolvimento
+# Dependências Node.js (se aplicável)
+node_modules/
+
+# Arquivos de sistema e IDEs
 .vscode/
 .DS_Store
+Thumbs.db
+*.log

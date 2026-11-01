@@ -1,120 +1,72 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
-    <style>
-      /* Interface flutuante (Overlay) */
-      #ui-container {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 9999;
-        display: none; /* Inicia oculto até achar a imagem */
-        gap: 10px;
-        background: rgba(0,0,0,0.7);
-        padding: 12px 20px;
-        border-radius: 30px;
-      }
-      button {
-        background: #007bff;
-        color: white;
-        border: none;
-        padding: 10px 18px;
-        border-radius: 20px;
-        font-weight: bold;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- Controles Flutuantes -->
-    <div id="ui-container">
-      <button onclick="mudarSlide()">Alternar Modelo (Slide)</button>
-      <button onclick="tocarAudio()">🔊 Áudio</button>
-    </div>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>WebAR Experience</title>
+  
+  <!-- Dependências do MindAR & A-Frame -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
 
-    <!-- Cena 3D -->
-    <a-scene mindar-image="imageTargetSrc: ./targets.mind;" color-space="sRGB" renderer="colorManagement: true" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
-      <a-assets>
-        <a-asset-item id="mod1" src="./modelo1.glb"></a-asset-item>
-        <a-asset-item id="mod2" src="./modelo2.glb"></a-asset-item>
-        <audio id="som" src="./audio.mp3" preload="auto"></audio>
-      </a-assets>
+  <style>
+    /* Força o A-Frame e a Câmera a ocuparem 100% do display do celular */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: fixed;
+      background-color: #000;
+    }
+    
+    a-scene {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
 
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+    /* Modal de Economia de Bateria */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.85); color: white;
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; text-align: center; padding: 20px;
+    }
+    .modal-overlay button {
+      padding: 12px 24px; font-size: 16px; background: #007bff; color: white;
+      border: none; border-radius: 6px; cursor: pointer; margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
 
-      <a-entity mindar-image-target="targetIndex: 0" id="ancora">
-        <!-- Modelo 1 (Inicia Visível) -->
-        <a-gltf-model id="3d-modelo1" src="#mod1" position="0 0 0.1" scale="0.5 0.5 0.5" visible="true"></a-gltf-model>
-        <!-- Modelo 2 (Inicia Oculto) -->
-        <a-gltf-model id="3d-modelo2" src="#mod2" position="0 0 0.1" scale="0.5 0.5 0.5" visible="false"></a-gltf-model>
-      </a-entity>
-    </a-scene>
+  <!-- Modal de Economia de Bateria -->
+  <div id="sleep-modal" class="modal-overlay">
+    <h2>Sessão Pausada</h2>
+    <p>A câmera foi desligada para economizar bateria do seu dispositivo.</p>
+    <button id="btn-reconnect">Toque para Reativar Câmera</button>
+  </div>
 
-    <script>
-      const ancora = document.querySelector('#ancora');
-      const ui = document.querySelector('#ui-container');
-      const mod1 = document.querySelector('#3d-modelo1');
-      const mod2 = document.querySelector('#3d-modelo2');
-      const audio = document.querySelector('#som');
-      let slideAtual = 1;
+  <!-- Cena A-Frame com MindAR em Tela Cheia (Sem atributo embedded) -->
+  <a-scene 
+    mindar-image="imageTargetSrc: /storage/targets/targets.mind; autoStart: true; uiLoading: no;" 
+    color-space="sRGB" 
+    renderer="colorManagement: true, physicallyCorrectLights: true" 
+    vr-mode-ui="enabled: false" 
+    device-orientation-permission-ui="enabled: false">
+    
+    <!-- Luzes indispensáveis para renderizar modelos .glb/.gltf -->
+    <a-light type="ambient" intensity="1.5"></a-light>
+    <a-light type="directional" position="1 2 1" intensity="1.2"></a-light>
 
-      // Mostra a UI quando a câmera detecta a figura na parede
-      ancora.addEventListener("targetFound", () => {
-        ui.style.display = "flex";
-      });
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  </a-scene>
 
-      // Esconde a UI quando perde a figura
-      ancora.addEventListener("targetLost", () => {
-        ui.style.display = "none";
-        audio.pause();
-      });
-
-      // Alterna entre os modelos 3D (Lógica do Slide)
-      function mudarSlide() {
-        if (slideAtual === 1) {
-          mod1.setAttribute('visible', 'false');
-          mod2.setAttribute('visible', 'true');
-          slideAtual = 2;
-        } else {
-          mod1.setAttribute('visible', 'true');
-          mod2.setAttribute('visible', 'false');
-          slideAtual = 1;
-        }
-      }
-
-      function tocarAudio() {
-        audio.play();
-      }
-      document.addEventListener("DOMContentLoaded", () => {
-      console.log("🟢 [FRONT] DOM carregado. Inicializando cena AR...");
-
-      const sceneEl = document.querySelector("a-scene");
-      const targetEl = document.querySelector("#meu-target"); // Substitua pelo ID do seu a-entity do target
-
-      // Evento: Quando a cena do A-Frame/MindAR terminar de carregar
-      sceneEl.addEventListener("loaded", () => {
-        console.log("🟢 [FRONT] Cena A-Frame/MindAR totalmente carregada!");
-      });
-
-      // Evento: Quando a câmera detectar o alvo visual (targets.mind)
-      targetEl.addEventListener("targetFound", () => {
-        console.log("🎯 [FRONT] Alvo visual DETECTADO! Exibindo modelo 3D...");
-      });
-
-      // Evento: Quando o alvo sair do campo de visão da câmera
-      targetEl.addEventListener("targetLost", () => {
-        console.warn("⚠️ [FRONT] Alvo visual PERDIDO!");
-      });
-
-      // Captura de erro genérico na permissão ou carregamento de mídia
-      sceneEl.addEventListener("arError", (event) => {
-        console.error("❌ [FRONT] Erro no MindAR/Câmera:", event.detail);
-      });
-    });
-    </script>
-  </body>
+  <!-- Módulo Principal da Aplicação -->
+  <script type="module" src="js/App.js"></script>
+</body>
 </html>
