@@ -1,209 +1,209 @@
-# Documentação do Projeto: WebAR Local-First MVP
+---
 
-Este repositório contém uma aplicação de **Realidade Aumentada para Web (WebAR)** focada em execução 100% offline e local-first. A solução utiliza **MindAR.js** para rastreamento de imagens 2D, **A-Frame (Three.js)** para renderização 3D e um servidor HTTPS em **Python** configurado com certificados autoassinados para atender às exigências de segurança de acesso à câmara nos navegadores móveis.
+# WebAR Local-First — Ambiente de Homologação (`homolog`)
 
-> ⚠️ **IMPORTANTE:** Onde encontrar a marcação `<SEU_IP_LOCAL>`, substitua pelo endereço IPv4 real da máquina que está a executar o servidor (exemplo: `192.168.1.100` ou `192.168.137.1`).
+Este repositório contém a arquitetura **Local-First** para a aplicação de Realidade Aumentada baseada em Web (WebAR). O ambiente de **homologação (`homolog`)** atua como o ponto central de validação, integração e testes antes que qualquer alteração seja promovida para a ramificação de produção (`main`).
 
 ---
 
-## 1. Estrutura de Ficheiros do Projeto
+## 1. Importância do Ambiente de Homologação (`homolog`)
+
+O ambiente de homologação é o "terreno seguro" da engenharia de software. Ele replica fielmente as condições de execução real (comunicação via rede local, HTTPS com SSL autoassinado, consumo de APIs e visualização em smartphones), mas sem expor o ambiente definitivo de produção (`main`) a bugs ou inconsistências durante os testes efetuados por diferentes desenvolvedores ou testadores de campo.
+
+### Papel Estratégico no Projeto WebAR
+
+* **Isolamento de Erros:** Evita que falhas em código recém-desenvolvido quebrem a versão estável utilizada por outros membros da equipe.
+* **Validação Multi-dispositivo:** Permite testar o comportamento em diferentes smartphones físicos (Android/iOS) sob a mesma rede local.
+* **Consolidação de Módulos:** Garante que o painel CMS (`frontend/dashboard-cms`), o motor 3D (`frontend/ar-engine`), a API Python (`backend/static-server`) e os ativos 3D (`storage/`) funcionem de forma integrada.
+
+---
+
+## 2. Fluxo de Trabalho e Ciclo de Vida das Branches (Git Workflow)
+
+Para manter a organização do código, o desenvolvimento segue um fluxo rigoroso de ramificação (*branching model*):
 
 ```text
-/
-├── index.html                # Estrutura da cena 3D e integração MindAR/A-Frame
-├── server.py                 # Servidor HTTP/HTTPS local personalizado em Python
-├── targets.mind              # Arquivo binário com os pontos de rastreamento da imagem 2D
-├── modelo1.glb               # Modelo 3D no formato glTF Binary
-├── audio.mp3                 # Arquivo de áudio para ser disparado pelo evento de AR
-├── <SEU_IP_LOCAL>.pem        # Certificado SSL público (X.509) -> Ex: 192.168.1.100.pem
-└── <SEU_IP_LOCAL>-key.pem    # Chave privada RSA do certificado -> Ex: 192.168.1.100-key.pem
+[ feature/webar-dashboard-cms ] ──┐
+[ feature/ar-engine-gestures  ] ──┼──> ( Merge ) ──> [ homolog ] ──> ( Homologado ) ──> [ main ]
+[ feature/qa-telemetry-token  ] ──┘
 
 ```
 
----
+### Caminho Percorrido pelo Código
 
-## 2. Detalhamento de Ficheiros, Tags e Componentes
-
-### 2.1 `index.html` (Front-end WebAR)
-
-Ficheiro principal de visualização da aplicação. Combina HTML5 com os seletores declarativos do **A-Frame** e os atributos do **MindAR**.
-
-#### Tags e Atributos Principais
-
-* **`<script src="...">`**: Carrega as bibliotecas do A-Frame e do MindAR diretamente via CDN ou arquivo local.
-* **`<a-scene>`**: Tag principal do A-Frame que inicializa a renderização WebGL e o ciclo de animação (*render loop*) do Three.js.
-* `mindar-image="imageTargetSrc: ./targets.mind;"`: Atributo do MindAR que ativa o motor de visão computacional e indica onde está o arquivo de dados dos alvos 2D.
-* `color-space="sRGB"`: Define o espaço de cores correto para evitar que modelos 3D pareçam lavados ou escuros.
-* `renderer="colorManagement: true, physicallyCorrectLights"`: Ativa a iluminação baseada em física (PBR), necessária para texturas de modelos `.glb`.
-* `vr-mode-ui="enabled: false"` e `device-orientation-permission-ui="enabled: false"`: Desativam os botões padrão de VR/Giroscópio para manter a interface limpa.
+1. **`feature/*` (Branches de Funcionalidade):**
+* Cada nova funcionalidade ou correção é isolada em sua própria branch (ex: `feature/ar-engine-gestures`).
+* O desenvolvimento e os testes unitários ocorrem exclusivamente dentro desse escopo.
 
 
-* **`<a-assets>`**: Bloco de pré-carregamento do A-Frame. Gerencia o download assíncrono de arquivos pesados (modelos, áudios e imagens) antes do início da cena.
-* `<a-asset-item id="modelo1" src="./modelo1.glb"></a-asset-item>`: Define o recurso 3D com um identificador (`id`) único.
+2. **`homolog` (Ambiente de Integridade e Testes de Campo):**
+* Assim que os critérios de aceite da funcionalidade são atingidos, a branch `feature/*` é fundida (*merge*) na branch `homolog`.
+* É nesta branch que ocorrem as baterias de testes práticos com smartphones de validadores e visitantes.
 
 
-* **`<a-camera>`**: Define a câmara virtual.
-* `position="0 0 0"` e `look-controls="enabled: false"`: Passa o controle da câmara inteiramente para o rastreamento do MindAR/câmara física do telemóvel.
-
-
-* **`<a-light>`**: Adiciona iluminação virtual à cena.
-* `type="ambient" intensity="1.5"`: Luz uniforme que ilumina todas as faces do modelo de forma geral.
-* `type="directional" position="1 2 1"`: Luz direcionada que simula o Sol, criando sombras e destaques nos materiais 3D.
-
-
-* **`<a-entity mindar-image-target="targetIndex: 0">`**: Entidade lógica vinculada a uma imagem do `targets.mind`.
-* `targetIndex: 0`: Especifica que esta entidade deve aparecer apenas quando o **primeiro alvo** do arquivo `.mind` for detectado pela câmara.
-
-
-* **`<a-gltf-model>`**: Elemento responsável por renderizar modelos no formato `.glb`/`.gltf`.
-* `src="#modelo1"`: Aponta para o ID definido dentro de `<a-assets>`.
-* `position="0 0 0"`, `scale="0.1 0.1 0.1"`, `rotation="0 0 0"`: Controlam o deslocamento, o tamanho e a orientação do objeto 3D sobre a imagem rastreada.
+3. **`main` (Ambiente Estável / Produção):**
+* Somente após a aprovação completa em `homolog` sem pendências técnicas, o código é mesclado na `main`.
+* A branch `main` representa o sistema pronto para apresentação oficial ou uso contínuo no local de exposição.
 
 
 
 ---
 
-### 2.2 `server.py` (Servidor HTTPS em Python)
+## 3. Guia Prático de Configuração e Testes em Dispositivos Móveis
 
-Script responsável por servir os arquivos estáticos da pasta e criptografar a comunicação via SSL/TLS (exigência obrigatória do WebRTC/MediaDevices para liberarem a câmara no navegador).
-
-#### Módulos e Classes Utilizadas
-
-* **`http.server.HTTPServer`**: Classe nativa do Python responsável por escutar em um endereço IP e porta específicos e gerenciar as requisições HTTP de entrada.
-* **`http.server.SimpleHTTPRequestHandler`**: Manipulador (*handler*) padrão que lê arquivos do sistema de arquivos e os entrega como resposta (servindo `index.html`, `.glb`, `.mind`, etc.).
-* **`ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)`**: Cria um contexto de segurança moderno focado na operação como servidor SSL/TLS.
-* **`context.load_cert_chain(certfile, keyfile)`**: Carrega o certificado público (`.pem`) e a chave privada (`-key.pem`) necessários para estabelecer a chave de sessão com o telemóvel.
-* **`context.wrap_socket(httpd.socket, server_side=True)`**: Sobrescreve o socket TCP tradicional do HTTP por um socket seguro criptografado com HTTPS.
+Como as validações de campo exigem o acesso por smartphones diversos (não previamente preparados ou configurados), o servidor hospedado no computador host (PC) precisa estar adequadamente visível na rede local para aceitar as conexões dos dispositivos móveis.
 
 ---
 
-### 2.3 Arquivos de Recursos (`targets.mind` e `modelo1.glb`)
+### Passo 1: Identificação do IP do Servidor Host
 
-* **`targets.mind`**: Arquivo binário compilado que contém os "pontos de interesse" (keypoints de alto contraste) extraídos da imagem 2D original. É gerado pela ferramenta *MindAR Image Target Compiler*.
-* **`modelo1.glb`**: Formato **glTF Binary**. Agrupa malhas geométricas, esqueletos de animação, materiais e texturas (imagens) em um único arquivo binário comprimido e otimizado para a Web.
+Abra o terminal do seu sistema operacional para descobrir o IPv4 local do computador:
 
----
-
-## 3. Guia de Configuração e Execução (Passo a Passo)
-
-### 3.1 Identificação do Endereço IP Local
-
-O servidor e os certificados devem estar vinculados ao IPv4 da máquina que está a executar a aplicação.
-
-* **No Windows (CMD / PowerShell):**
-```cmd
+* **Windows (PowerShell / CMD):**
+```powershell
 ipconfig
 
 ```
 
 
-*Procure pelo **Endereço IPv4** do adaptador ativo (ex: `192.168.137.1`). Este valor será o seu `<SEU_IP_LOCAL>`.*
-* **No Linux (Debian/Ubuntu):**
+*(Procure a linha **Endereço IPv4** do seu adaptador físico. Ignore adaptadores virtuais como `vEthernet`)*
+* **Linux (Debian / Ubuntu / Raspbian):**
 ```bash
+hostname -I | awk '{print $1}'
+# ou
 ip a
 
 ```
 
 
-*Procure pelo endereço IPv4 da interface ativa (ex: `wlan0`, `eth0` ou `usb0`). Este valor será o seu `<SEU_IP_LOCAL>`.*
+* **macOS (Terminal):**
+```bash
+ipconfig getifaddr en0
+
+```
+
+
+*(Caso esteja no Wi-Fi e não retorne nada, tente `en1`)*
+
+> **Exemplo de IP obtido:** `192.168.1.15` (Será referenciado neste guia como `<SEU-IP-LOCAL>`).
 
 ---
 
-### 3.2 Geração dos Certificados SSL Autoassinados (OpenSSL)
+### Passo 2: Geração do Certificado SSL Local
 
-Substitua `<SEU_IP_LOCAL>` pelo IP obtido no passo anterior.
+Navegadores móveis exigem conexão HTTPS para liberar a câmera (`getUserMedia`). Na raiz do projeto, gere os certificados especificando o IP obtido no Passo 1:
 
-#### No Linux / Terminal Padrão:
-
+* **Linux / macOS (Terminal):**
 ```bash
-openssl req -x509 -newkey rsa:2048 -keyout <SEU_IP_LOCAL>-key.pem -out <SEU_IP_LOCAL>.pem -days 365 -nodes -subj "/CN=<SEU_IP_LOCAL>"
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=<SEU-IP-LOCAL>"
 
 ```
 
-#### No Windows via Git Bash:
 
-*(Utilizam-se duas barras `//` para impedir a conversão de caminho do Git Bash)*
-
+* **Windows (Git Bash):**
 ```bash
-openssl req -x509 -newkey rsa:2048 -keyout <SEU_IP_LOCAL>-key.pem -out <SEU_IP_LOCAL>.pem -days 365 -nodes -subj "//CN=<SEU_IP_LOCAL>"
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "//CN=<SEU-IP-LOCAL>"
 
 ```
 
-#### No Windows via Prompt de Comando (CMD):
 
-```cmd
-openssl req -x509 -newkey rsa:2048 -keyout <SEU_IP_LOCAL>-key.pem -out <SEU_IP_LOCAL>.pem -days 365 -nodes -subj "/CN=<SEU_IP_LOCAL>"
-
-```
-
-> **Exemplo prático (Se o IP for `192.168.1.50`):**
-> ```cmd
-> openssl req -x509 -newkey rsa:2048 -keyout 192.168.1.50-key.pem -out 192.168.1.50.pem -days 365 -nodes -subj "/CN=192.168.1.50"
-> 
-> ```
-> 
-> 
 
 ---
 
-### 3.3 Liberação no Firewall de Rede
+### Passo 3: Configuração do Firewall no Host
 
-Para impedir que a conexão do telemóvel seja bloqueada na porta `8080` ou no protocolo ICMP (ping):
+Para que os smartphones consigam conectar na porta `8080`, libere a porta no Firewall do sistema host:
 
-#### No Windows (Prompt de Comando como Administrador):
+#### A. Windows (PowerShell como Administrador)
 
-```cmd
-netsh advfirewall firewall add rule name="WebAR Python 8080" dir=in action=allow protocol=TCP localport=8080
-netsh advfirewall firewall add rule name="Liberar Ping ICMPv4" dir=in action=allow protocol=ICMPv4
+```powershell
+# 1. Define a rede como Privada
+Set-NetConnectionProfile -NetworkCategory Private
+
+# 2. Libera a porta 8080 (TCP) e resposta a PING (ICMPv4)
+New-NetFirewallRule -DisplayName "WebAR Direct 8080" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8080
+New-NetFirewallRule -DisplayName "Liberar PING ICMPv4" -Direction Inbound -Action Allow -Protocol ICMPv4
 
 ```
 
-#### No Linux (UFW):
+#### B. Linux Debian / Ubuntu (UFW - Uncomplicated Firewall)
 
 ```bash
+# Libera a porta 8080 TCP
 sudo ufw allow 8080/tcp
+
+# O tráfego ICMP (PING) já vem liberado por padrão no UFW.
+# Recarregue as regras:
 sudo ufw reload
 
 ```
 
----
+#### C. macOS (Opcional)
 
-### 3.4 Configuração e Execução do Servidor
+O macOS normalmente não bloqueia portas de desenvolvimento local. Caso o firewall interno esteja ativado:
 
-1. Abra o arquivo `server.py` e configure a variável `IP` com o mesmo valor utilizado na geração do certificado:
-```python
-IP = '<SEU_IP_LOCAL>'  # Substitua pelo seu IPv4 real (ex: '192.168.1.50')
-PORT = 8080
-
-```
-
-
-2. Execute o servidor na pasta raiz do projeto:
-* **Windows:**
-```cmd
-python server.py
-
-```
-
-
-* **Linux:**
-```bash
-python3 server.py
-
-```
-
-
-
-
+1. Vá em **Ajustes do Sistema > Rede > Firewall**.
+2. Clique em **Opções** e garanta que o executável do `Python` esteja definido para **"Permitir conexões de entrada"**.
 
 ---
 
-### 3.5 Acesso e Bypass de Segurança no Dispositivo Móvel
+### Passo 4: Conexão e Diagnóstico no Smartphone de Teste
 
-1. Conecte o telemóvel à mesma rede Wi-Fi/Hotspot do computador.
-2. Abra o navegador **Google Chrome** no telemóvel.
-3. Acesse o endereço HTTPS utilizando o seu IP: `https://<SEU_IP_LOCAL>:8080` (ex: `[https://192.168.1.50:8080](https://192.168.1.50:8080)`).
-4. Devido ao certificado autoassinado, o navegador exibirá o aviso *"A sua ligação não é privada"*.
-5. Toque em **Avançado** $\rightarrow$ **Continuar para <SEU_IP_LOCAL> (não seguro)**.
-6. Permita o acesso à câmara quando solicitado na tela.
-7. Aponte a câmara para a imagem do target para carregar o modelo 3D.
+Conecte o celular ao **mesmo Wi-Fi** em que o servidor está rodando.
+
+#### A. Diagnóstico de Rede (Teste de PING no Celular)
+
+Utilize qualquer aplicativo de PING no smartphone (ex: *Ping tools*):
+
+1. Teste o IP do servidor: `<SEU-IP-LOCAL>`.
+2. **Esperado:** Retorno em milissegundos (`ms`) com 0% de perda.
+3. **Se der Timeout:** O celular está em rede Wi-Fi isolada (ex: "Wi-Fi de Visitantes") ou o Firewall do computador host bloqueou os pacotes.
+
+#### B. Autorização do Certificado SSL e Liberação da Câmera
+
+1. No navegador do celular, acesse a rota da API com `https://`:
+```text
+https://<SEU-IP-LOCAL>:8080/api/config
+
+```
+
+
+2. Ao receber o alerta **"Sua conexão não é privada"**, toque em **"Avançado"** e selecione **"Continuar para  (não seguro)"**.
+3. Assim que o conteúdo do JSON for exibido no celular, a exceção HTTPS estará gravada para essa sessão.
+4. Abra o visualizador WebAR:
+```text
+https://<SEU-IP-LOCAL>:8080/frontend/ar-engine/index.html
+
+```
+
+
+5. Aceite a permissão de uso da câmera.
+
+---
+
+## 4. Glossário para Leigos (Termos Técnicos Explicados)
+
+| Termo | O que significa na prática? |
+| --- | --- |
+| **Local-First** | Arquitetura onde a aplicação funciona 100% dentro da rede local (sem depender de servidores na nuvem ou internet aberta para rodar). |
+| **WebAR** | Realidade Aumentada executada diretamente pelo navegador do celular (Chrome/Safari), sem necessidade de instalar aplicativos da loja. |
+| **PC Host** | O computador central no local da exposição que executa o servidor Python e armazena os modelos 3D. |
+| **IP (Endereço IP)** | O "número de telefone" único que identifica o PC host dentro da rede local (ex: `192.168.1.15`). |
+| **Localhost** | Termo que significa "este próprio dispositivo". Usar `localhost` no celular faz com que ele procure o servidor nele mesmo, por isso devemos usar o IP do PC. |
+| **Firewall (UFW / Defender)** | O "segurança digital" do sistema operacional que decide quais conexões vindas da rede podem entrar ou sair do computador. |
+| **PING (ICMP)** | Um sinal de teste enviado do celular para o computador para checar se ambos conseguem conversar na rede. |
+| **SSL / HTTPS** | Protocolo de segurança que criptografa a navegação (representado pelo cadeado no navegador). É obrigatório para liberar a câmera do celular. |
+| **Certificado Autoassinado** | Um certificado de segurança gerado localmente pelo projeto para liberar a câmera sem precisar pagar por um domínio na internet. |
+| **MindAR / Targets** | Tecnologia que reconhece imagens físicas (marcadores/posters) capturadas pela câmera e posiciona o objeto 3D sobre elas. |
+| **GLB / GLTF** | Formato de arquivo padrão para modelos 3D na web (similar ao que o PDF é para documentos ou MP3 para áudios). |
+
+---
+
+## 5. Próximos Passos e Documentação Modular
+
+Com a consolidação da branch **`homolog`**, cada módulo do sistema contará com seu próprio arquivo `README.md` detalhado dentro de suas respectivas pastas:
+
+* `frontend/ar-engine/README.md`: Detalhes do ciclo de vida do A-Frame, rotinas do `SessionManager` e `GestureController`.
+* `frontend/dashboard-cms/README.md`: Manual de uso e integração da interface administrativa.
+* `backend/static-server/README.md`: Estrutura das rotas REST, persistência em `data.json` e suporte a conexões HTTPS multi-thread.
+* `storage/README.md`: Convenções de nomenclatura e diretrizes de otimização para arquivos `.glb` e `.mind`.
