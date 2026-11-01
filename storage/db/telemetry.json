@@ -1,5 +1,5 @@
 {
-  "totalSessions": 4,
+  "totalSessions": 5,
   "targetViews": {
     "0": 13
   },
@@ -144,6 +144,11 @@
       "event": "session_end",
       "timestamp": "2026-11-01T07:29:37.163Z",
       "sessionDurationSeconds": 86
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T15:23:45.053Z",
+      "sessionDurationSeconds": 0
     }
   ]
 }

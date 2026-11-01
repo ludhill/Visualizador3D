@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Code de Acesso - WebAR Exposição</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .card {
+      background-color: #1e293b;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+      color: #38bdf8;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin-bottom: 24px;
+    }
+    #qrcode-box {
+      background: #ffffff;
+      padding: 16px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      min-width: 200px;
+      min-height: 200px;
+    }
+    .url-display {
+      background-color: #0f172a;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #4ade80;
+      word-break: break-all;
+      border: 1px solid #334155;
+    }
+    .badge {
+      display: inline-block;
+      background-color: #22c55e;
+      color: #000;
+      font-weight: bold;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <span class="badge">SERVIDOR ONLINE</span>
+    <h1>Acesso à Experiência WebAR</h1>
+    <p>Escaneie o QR Code com a câmera do celular para iniciar</p>
+
+    <!-- Troca da <div> por <canvas> dentro da caixa de fundo branco -->
+    <div id="qrcode-box">
+      <canvas id="qrcode-canvas"></canvas>
+    </div>
+
+    <div class="url-display" id="url-text">Carregando IP do Servidor...</div>
+  </div>
+
+  <!-- 1. Biblioteca de terceiros (Vendor) -->
+  <script src="../vendor/qrious.min.js"></script>
+
+  <!-- 2. Lógica do seu sistema (CMS JS) -->
+  <script src="js/qrcode-logic.js?v=2"></script>
+</body>
+</html>
