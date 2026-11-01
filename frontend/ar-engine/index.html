@@ -5,29 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>WebAR Experience</title>
   
-  <!-- Dependências do MindAR & A-Frame -->
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+  <!-- Antes (Dependente de CDN externa) -->
+  <!-- <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script> -->
+
+  <!-- Agora (100% Local / Offline) -->
+  <script src="vendor/aframe.min.js"></script>
+  <script src="vendor/mindar-image-aframe.prod.js"></script>
 
   <style>
-    /* Força o A-Frame e a Câmera a ocuparem 100% do display do celular */
     html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      position: fixed;
-      background-color: #000;
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; position: fixed; background-color: #000;
+      font-family: sans-serif;
     }
     
     a-scene {
-      width: 100vw;
-      height: 100vh;
-      position: absolute;
-      top: 0;
-      left: 0;
+      width: 100vw; height: 100vh; position: absolute; top: 0; left: 0;
     }
+
+    /* Interface de Acesso Negado */
+    .denied-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #111; color: #ff4d4d; display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      z-index: 10000; text-align: center; padding: 20px;
+    }
+    .denied-overlay h1 { font-size: 22px; margin-bottom: 10px; color: #ff4d4d; }
+    .denied-overlay p { color: #ccc; max-width: 300px; font-size: 14px; line-height: 1.4; }
 
     /* Modal de Economia de Bateria */
     .modal-overlay {
@@ -44,6 +49,12 @@
 </head>
 <body>
 
+  <!-- Tela de Bloqueio por Token Ausente/Inválido -->
+  <div id="denied-modal" class="denied-overlay">
+    <h1>Acesso Não Autorizado</h1>
+    <p>Por favor, escaneie o QR Code oficial da exposição para acessar esta experiência WebAR.</p>
+  </div>
+
   <!-- Modal de Economia de Bateria -->
   <div id="sleep-modal" class="modal-overlay">
     <h2>Sessão Pausada</h2>
@@ -51,7 +62,7 @@
     <button id="btn-reconnect">Toque para Reativar Câmera</button>
   </div>
 
-  <!-- Cena A-Frame com MindAR em Tela Cheia (Sem atributo embedded) -->
+  <!-- Cena A-Frame (Propriedades do MindAR são injetadas via JavaScript) -->
   <a-scene 
     mindar-image="imageTargetSrc: /storage/targets/targets.mind; autoStart: true; uiLoading: no;" 
     color-space="sRGB" 
@@ -59,14 +70,12 @@
     vr-mode-ui="enabled: false" 
     device-orientation-permission-ui="enabled: false">
     
-    <!-- Luzes indispensáveis para renderizar modelos .glb/.gltf -->
     <a-light type="ambient" intensity="1.5"></a-light>
     <a-light type="directional" position="1 2 1" intensity="1.2"></a-light>
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
   </a-scene>
 
-  <!-- Módulo Principal da Aplicação -->
   <script type="module" src="js/App.js"></script>
 </body>
 </html>

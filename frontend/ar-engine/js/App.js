@@ -1,61 +1,82 @@
 import { SessionManager } from './SessionManager.js';
 import { GestureController } from './GestureController.js';
 
+const urlParams = new URLSearchParams(window.location.search);
+const token = urlParams.get('token') || '';
+
 document.addEventListener('DOMContentLoaded', async () => {
-  const modal = document.getElementById('sleep-modal');
+  const deniedModal = document.getElementById('denied-modal');
+  const sleepModal = document.getElementById('sleep-modal');
   const btnReconectar = document.getElementById('btn-reconnect');
+  const scene = document.querySelector('a-scene');
 
-  // Inicializa o Gerenciador de Sessão (Sleep após 3 min)
-  const session = new SessionManager(180000, (reason) => {
-    modal.style.display = 'flex';
-  });
-
-  btnReconectar.addEventListener('click', () => session.wakeUp());
-
-  // Consome a lista dinâmica de alvos do CMS
   try {
-    const response = await fetch('/api/config');
+    // 1. Valida o Token com a API
+    const response = await fetch('/api/config', {
+      headers: {
+        'X-App-Token': token
+      }
+    });
+
+    // 2. Se não autorizado (403): Bloqueia a interface e pausa o WebGL
+    if (response.status === 403) {
+      if (deniedModal) deniedModal.style.display = 'flex';
+      if (scene) scene.pause();
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Status ${response.status}`);
+    }
+
+    // 3. Se autorizado: Limpa o token da URL visual do navegador
+    if (token) {
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+    }
+
     const config = await response.json();
-    setupARScene(config.items);
+    setupARScene(config.items, sleepModal, btnReconectar);
   } catch (error) {
-    console.error("[AR Engine] Falha ao carregar configuração dinâmica:", error);
+    console.error("[AR Engine] Erro ao carregar dados:", error);
   }
 });
 
-function setupARScene(items) {
+function setupARScene(items, modal, btnReconectar) {
   const scene = document.querySelector('a-scene');
 
   scene.addEventListener('arReady', () => {
     console.log('[AR Engine] Câmara e WebGL inicializados com sucesso.');
     
-    // Ativa o temporizador de bateria apenas após a câmara arrancar
-    const session = new SessionManager(180000, (reason) => {
-      modal.style.display = 'flex';
+    const session = new SessionManager(180000, () => {
+      if (modal) modal.style.display = 'flex';
     });
 
-    btnReconectar.addEventListener('click', () => session.wakeUp());
-  });
-
-  scene.addEventListener('arError', (event) => {
-    console.error('[AR Engine] Falha ao iniciar a câmara. Verifique as permissões HTTPS/IP.');
+    if (btnReconectar) {
+      btnReconectar.addEventListener('click', () => {
+        if (modal) modal.style.display = 'none';
+        session.wakeUp();
+      });
+    }
   });
 
   items.forEach((item) => {
     if (!item.active) return;
 
-    // Conecta cada alvo ao índice dinâmico do data.json
     const targetEntity = document.createElement('a-entity');
     targetEntity.setAttribute('mindar-image-target', `targetIndex: ${item.targetIndex}`);
 
     const modelEntity = document.createElement('a-gltf-model');
-    modelEntity.setAttribute('src', `/storage/models/${item.modelFile}`);
+    // Envia o token na requisição do arquivo 3D para passar pela validação do server.py
+    const modelUrl = `/storage/models/${item.modelFile}?token=${encodeURIComponent(token)}`;
+    
+    modelEntity.setAttribute('src', modelUrl);
     modelEntity.setAttribute('scale', item.scale || '1 1 1');
     modelEntity.setAttribute('rotation', item.rotation || '0 0 0');
 
     targetEntity.appendChild(modelEntity);
     scene.appendChild(targetEntity);
 
-    // Ativa os controles gestuais ao detectar o modelo
     targetEntity.addEventListener('targetFound', () => {
       new GestureController(modelEntity);
     });
