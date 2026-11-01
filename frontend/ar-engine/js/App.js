@@ -12,41 +12,50 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnReconectar = document.getElementById('btn-reconnect');
   const scene = document.querySelector('a-scene');
 
+  // 1. Bloqueia imediatamente se não houver token na URL
+  if (!token) {
+    if (deniedModal) deniedModal.style.display = 'flex';
+    return;
+  }
+
   try {
+    // 2. Valida o token com a API Backend
     const response = await fetch('/api/config', {
       headers: {
         'X-App-Token': token
       }
     });
 
-    if (response.status === 403) {
+    if (response.status === 403 || !response.ok) {
       if (deniedModal) deniedModal.style.display = 'flex';
-      if (scene) scene.pause();
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`Status ${response.status}`);
-    }
-
-    // Inicializa a Telemetria e registra o início da sessão
+    // 3. Inicializa a Telemetria e registra o início da sessão
     telemetry = new TelemetryTracker(token);
     telemetry.track('session_start');
 
-    // Mascara o token da barra de endereço
-    if (token) {
-      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-      window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
-    }
+    // 4. Mascara o token da URL para não ficar visível na barra do navegador
+    const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+    window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
 
+    // 5. Configura e carrega os modelos 3D na cena
     const config = await response.json();
     setupARScene(config.items, sleepModal, btnReconectar);
+
+    // 6. Inicia a câmera e o rastreamento MindAR somente agora que tudo foi validado
+    const arSystem = scene.systems['mindar-image-system'];
+    if (arSystem) {
+      arSystem.start();
+    }
+
   } catch (error) {
     console.error("[AR Engine] Erro ao carregar dados:", error);
+    if (deniedModal) deniedModal.style.display = 'flex';
   }
 });
 
-// Registra quando o usuário fecha ou sai da página
+// Registra a saída do usuário
 window.addEventListener('beforeunload', () => {
   if (telemetry) {
     telemetry.track('session_end');
@@ -57,7 +66,7 @@ function setupARScene(items, modal, btnReconectar) {
   const scene = document.querySelector('a-scene');
 
   scene.addEventListener('arReady', () => {
-    console.log('[AR Engine] Câmara e WebGL inicializados.');
+    console.log('[AR Engine] Câmera e WebGL inicializados com sucesso.');
     
     const session = new SessionManager(180000, () => {
       if (modal) modal.style.display = 'flex';
@@ -89,7 +98,7 @@ function setupARScene(items, modal, btnReconectar) {
     targetEntity.appendChild(modelEntity);
     scene.appendChild(targetEntity);
 
-    // Registra na telemetria quando um marcador é reconhecido pela câmera
+    // Evento de reconhecimento do marcador
     targetEntity.addEventListener('targetFound', () => {
       new GestureController(modelEntity);
       if (telemetry) {

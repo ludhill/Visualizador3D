@@ -1,5 +1,5 @@
 {
-  "totalSessions": 5,
+  "totalSessions": 8,
   "targetViews": {
     "0": 13
   },
@@ -149,6 +149,36 @@
       "event": "session_start",
       "timestamp": "2026-11-01T15:23:45.053Z",
       "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T15:42:22.247Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T15:42:29.614Z",
+      "sessionDurationSeconds": 7
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T15:42:30.139Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T15:42:33.310Z",
+      "sessionDurationSeconds": 3
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-01T15:43:07.069Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-01T15:43:37.606Z",
+      "sessionDurationSeconds": 30
     }
   ]
 }
