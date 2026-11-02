@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics & Telemetria - WebAR CMS</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-color: #38bdf8;
+      --border-color: #334155;
+      --base-font-size: 100%;
+      --kpi-value-color: #4ade80;
+    }
+
+    /* Variações de Tema */
+    body[data-theme="high-contrast"] {
+      --bg-color: #000000;
+      --card-bg: #121212;
+      --text-main: #ffffff;
+      --text-muted: #ffff00;
+      --accent-color: #00ffff;
+      --border-color: #ffffff;
+      --kpi-value-color: #00ff00;
+    }
+
+    body[data-theme="light"] {
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --accent-color: #0284c7;
+      --border-color: #e2e8f0;
+      --kpi-value-color: #16a34a;
+    }
+
+    /* Variações de Tamanho de Fonte */
+    body[data-font="medium"] { --base-font-size: 115%; }
+    body[data-font="large"] { --base-font-size: 130%; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: var(--base-font-size);
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 30px 20px;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* Cabeçalho e Ações */
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      color: var(--accent-color);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    /* Barra de Acessibilidade */
+    .accessibility-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background-color: var(--card-bg);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      font-size: 0.85rem;
+    }
+
+    .accessibility-bar label {
+      color: var(--text-muted);
+    }
+
+    .ctrl-select {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .btn-refresh {
+      background-color: var(--accent-color);
+      color: #0f172a;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+    }
+
+    .btn-refresh:hover {
+      opacity: 0.9;
+    }
+
+    /* Grelha de KPIs (Destaques) */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .kpi-card {
+      background-color: var(--card-bg);
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      border: 1px solid var(--border-color);
+    }
+
+    .kpi-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .kpi-value {
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: var(--kpi-value-color);
+    }
+
+    .kpi-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* Grelha de Gráficos */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 25px;
+    }
+
+    .chart-card {
+      background-color: var(--card-bg);
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-card h2 {
+      font-size: 1.1rem;
+      color: var(--text-main);
+      margin-bottom: 20px;
+    }
+
+    .chart-container {
+      position: relative;
+      flex-grow: 1;
+      min-height: 260px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    @media (max-width: 600px) {
+      .charts-grid {
+        grid-template-columns: 1fr;
+      }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .header-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div>
+        <h1>Dashboard de Telemetria</h1>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">Métricas anônimas de utilização da exposição WebAR</p>
+      </div>
+
+      <div class="header-actions">
+        <!-- Barra de Acessibilidade -->
+        <div class="accessibility-bar">
+          <label for="theme-select">Tema:</label>
+          <select id="theme-select" class="ctrl-select">
+            <option value="dark">Escuro</option>
+            <option value="high-contrast">Alto Contraste</option>
+            <option value="light">Claro</option>
+          </select>
+
+          <label for="font-select">Fonte:</label>
+          <select id="font-select" class="ctrl-select">
+            <option value="normal">Normal</option>
+            <option value="medium">Média (+15%)</option>
+            <option value="large">Grande (+30%)</option>
+          </select>
+        </div>
+
+        <button class="btn-refresh" id="btn-refresh">Atualizar Dados</button>
+      </div>
+    </header>
+
+    <!-- Cartões Numéricos de Destaque (KPIs) -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-title">Total de Sessões</div>
+        <div class="kpi-value" id="kpi-sessions">--</div>
+        <div class="kpi-subtitle">Acessos únicos registrados</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-title">Tempo Médio por Sessão</div>
+        <div class="kpi-value" id="kpi-avg-time">--</div>
+        <div class="kpi-subtitle">Duração média de permanência</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-title">Modelo Mais Visto</div>
+        <div class="kpi-value" id="kpi-top-target" style="color: var(--accent-color);">--</div>
+        <div class="kpi-subtitle">Maior número de visualizações</div>
+      </div>
+    </section>
+
+    <!-- Contêineres para os Gráficos -->
+    <section class="charts-grid">
+      <div class="chart-card">
+        <h2>Visualizações por Modelo 3D</h2>
+        <div class="chart-container">
+          <canvas id="chart-targets"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h2>Fluxo de Acessos por Horário (24h)</h2>
+        <div class="chart-container">
+          <canvas id="chart-hourly"></canvas>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Inclusão das Bibliotecas e Lógica de Negócio (Parte C) -->
+  <script src="../vendor/chart.min.js"></script>
+  <script src="js/analytics-logic.js?v=1"></script>
+</body>
+</html>
