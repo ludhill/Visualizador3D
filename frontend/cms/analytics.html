@@ -37,9 +37,14 @@
       --kpi-value-color: #16a34a;
     }
 
-    /* Variações de Tamanho de Fonte */
+    /* Variações de Tamanho de Fonte 
     body[data-font="medium"] { --base-font-size: 115%; }
     body[data-font="large"] { --base-font-size: 130%; }
+    */
+
+    html[data-font="normal"] { font-size: 100%; }
+    html[data-font="medium"] { font-size: 115%; }
+    html[data-font="large"] { font-size: 130%; }
 
     * {
       box-sizing: border-box;
@@ -208,6 +213,94 @@
         justify-content: space-between;
       }
     }
+
+    /* Estilo visual do botão na tela */
+    .btn-print {
+      background-color: #334155;
+      color: #f8fafc;
+      border: 1px solid var(--border-color);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    .btn-print:hover {
+      background-color: #475569;
+    }
+
+    /* ==========================================================================
+      REGRAS DE IMPRESSÃO / EXPORTAÇÃO PDF (FOLHA A4)
+      ========================================================================== */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 12mm;
+      }
+
+      body {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        padding: 0 !important;
+        font-size: 10pt !important;
+      }
+
+      /* Oculta botões de controle e acessibilidade na folha */
+      .header-actions, .accessibility-bar {
+        display: none !important;
+      }
+
+      header {
+        border-bottom: 2px solid #000000 !important;
+        margin-bottom: 15px !important;
+        padding-bottom: 8px !important;
+      }
+
+      h1 {
+        color: #000000 !important;
+        font-size: 1.4rem !important;
+      }
+
+      /* Reduz e adapta os cartões e gráficos para papel */
+      .kpi-grid {
+        gap: 12px !important;
+        margin-bottom: 15px !important;
+      }
+
+      .kpi-card, .chart-card {
+        background-color: #ffffff !important;
+        border: 1px solid #cccccc !important;
+        box-shadow: none !important;
+        color: #000000 !important;
+        padding: 12px !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      .kpi-title, .kpi-subtitle {
+        color: #444444 !important;
+      }
+
+      .kpi-value {
+        color: #000000 !important;
+        font-size: 1.6rem !important;
+      }
+
+      .charts-grid {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 15px !important;
+      }
+
+      .chart-card h2 {
+        color: #000000 !important;
+        font-size: 0.95rem !important;
+        margin-bottom: 10px !important;
+      }
+
+      .chart-container {
+        min-height: 180px !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -238,6 +331,7 @@
         </div>
 
         <button class="btn-refresh" id="btn-refresh">Atualizar Dados</button>
+        <button class="btn-print" id="btn-print">Imprimir / Salvar PDF</button>
       </div>
     </header>
 
