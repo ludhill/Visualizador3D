@@ -64,6 +64,10 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
             
+        # O ficheiro sw.js nunca deve ser mantido em cache rígido pelo browser
+        elif clean_path.endswith('sw.js'):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            
         # Ficheiros 3D pesados (.glb) e marcadores (.mind): Cache longa de 7 dias (604800 s)
         elif clean_path.endswith(('.glb', '.mind')):
             self.send_header('Cache-Control', 'public, max-age=604800, immutable')

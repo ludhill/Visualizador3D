@@ -12,14 +12,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnReconectar = document.getElementById('btn-reconnect');
   const scene = document.querySelector('a-scene');
 
-  // 1. Bloqueia imediatamente se não houver token na URL
+  // Bloqueia imediatamente se não houver token na URL
   if (!token) {
     if (deniedModal) deniedModal.style.display = 'flex';
     return;
   }
 
   try {
-    // 2. Valida o token com a API Backend
+    // Valida o token com a API Backend
     const response = await fetch('/api/config', {
       headers: {
         'X-App-Token': token
@@ -31,19 +31,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // 3. Inicializa a Telemetria e registra o início da sessão
+    // Inicializa a Telemetria e registra o início da sessão
     telemetry = new TelemetryTracker(token);
     telemetry.track('session_start');
 
-    // 4. Mascara o token da URL para não ficar visível na barra do navegador
+    // Mascara o token da URL para não ficar visível na barra do navegador
     const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
     window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
 
-    // 5. Configura e carrega os modelos 3D na cena
+    // Configura as entidades da cena WebAR (Lazy Loading ativado)
     const config = await response.json();
     setupARScene(config.items, sleepModal, btnReconectar);
 
-    // 6. Inicia a câmera e o rastreamento MindAR somente agora que tudo foi validado
+    // Inicia a câmera e o rastreamento MindAR somente agora que tudo foi validado
     const arSystem = scene.systems['mindar-image-system'];
     if (arSystem) {
       arSystem.start();
@@ -85,26 +85,45 @@ function setupARScene(items, modal, btnReconectar) {
   items.forEach((item) => {
     if (!item.active) return;
 
+    // Instancia apenas o nó do alvo MindAR
     const targetEntity = document.createElement('a-entity');
     targetEntity.setAttribute('mindar-image-target', `targetIndex: ${item.targetIndex}`);
-
-    const modelEntity = document.createElement('a-gltf-model');
-    const modelUrl = `/storage/models/${item.modelFile}?token=${encodeURIComponent(token)}`;
-    
-    modelEntity.setAttribute('src', modelUrl);
-    modelEntity.setAttribute('scale', item.scale || '1 1 1');
-    modelEntity.setAttribute('rotation', item.rotation || '0 0 0');
-
-    targetEntity.appendChild(modelEntity);
     scene.appendChild(targetEntity);
 
-    // Evento de reconhecimento do marcador
+    let isModelLoaded = false;
+    let modelEntity = null;
+
+    // Carregamento Sob Demanda (Lazy Loading) disparado no targetFound
     targetEntity.addEventListener('targetFound', () => {
-      new GestureController(modelEntity);
+      if (!isModelLoaded) {
+        console.log(`[AR Engine] Alvo ${item.targetIndex} detectado. Iniciando download do modelo 3D...`);
+        
+        modelEntity = document.createElement('a-gltf-model');
+        const modelUrl = `/storage/models/${item.modelFile}?token=${encodeURIComponent(token)}`;
+        
+        modelEntity.setAttribute('src', modelUrl);
+        modelEntity.setAttribute('scale', item.scale || '1 1 1');
+        modelEntity.setAttribute('rotation', item.rotation || '0 0 0');
+
+        targetEntity.appendChild(modelEntity);
+        
+        // Associa o controlador de gestos ao modelo recém-carregado
+        new GestureController(modelEntity);
+        isModelLoaded = true;
+      }
+
       if (telemetry) {
         telemetry.track('target_found', { 
           targetIndex: item.targetIndex,
           modelName: item.name || item.modelFile
+        });
+      }
+    });
+
+    targetEntity.addEventListener('targetLost', () => {
+      if (telemetry) {
+        telemetry.track('target_lost', { 
+          targetIndex: item.targetIndex 
         });
       }
     });

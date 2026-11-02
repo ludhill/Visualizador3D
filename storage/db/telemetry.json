@@ -1,7 +1,7 @@
 {
-  "totalSessions": 8,
+  "totalSessions": 26,
   "targetViews": {
-    "0": 13
+    "0": 15
   },
   "logs": [
     {
@@ -179,6 +179,191 @@
       "event": "session_end",
       "timestamp": "2026-11-01T15:43:37.606Z",
       "sessionDurationSeconds": 30
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:04:08.602Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:07:42.878Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:07:57.799Z",
+      "sessionDurationSeconds": 14
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:07:58.331Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:15:17.360Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:15:25.662Z",
+      "sessionDurationSeconds": 8
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:16:01.263Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:16:10.639Z",
+      "sessionDurationSeconds": 9
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:16:11.484Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:17:33.776Z",
+      "sessionDurationSeconds": 82
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:17:44.763Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:38:57.011Z",
+      "sessionDurationSeconds": 1272
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:38:58.345Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:39:41.529Z",
+      "sessionDurationSeconds": 43
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:39:45.014Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:39:59.462Z",
+      "sessionDurationSeconds": 14
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:40:04.826Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:44:39.080Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:44:55.326Z",
+      "sessionDurationSeconds": 16
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:44:56.116Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:48:32.366Z",
+      "sessionDurationSeconds": 216
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:48:53.767Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:49:06.304Z",
+      "sessionDurationSeconds": 12
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:49:13.028Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:50:30.760Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_sleep",
+      "timestamp": "2026-11-02T05:50:42.809Z",
+      "sessionDurationSeconds": 12
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:52:45.869Z",
+      "sessionDurationSeconds": 212
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:52:51.227Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:58:47.216Z",
+      "sessionDurationSeconds": 355
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:58:48.377Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "session_start",
+      "timestamp": "2026-11-02T05:59:04.934Z",
+      "sessionDurationSeconds": 0
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-02T05:59:29.864Z",
+      "sessionDurationSeconds": 24,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "target_lost",
+      "timestamp": "2026-11-02T05:59:34.465Z",
+      "sessionDurationSeconds": 29,
+      "targetIndex": 0
+    },
+    {
+      "event": "target_found",
+      "timestamp": "2026-11-02T05:59:34.874Z",
+      "sessionDurationSeconds": 29,
+      "targetIndex": 0,
+      "modelName": "Modelo Principal 1"
+    },
+    {
+      "event": "session_end",
+      "timestamp": "2026-11-02T05:59:51.099Z",
+      "sessionDurationSeconds": 46
+    },
+    {
+      "event": "session_sleep",
+      "timestamp": "2026-11-02T05:59:51.189Z",
+      "sessionDurationSeconds": 46
     }
   ]
 }

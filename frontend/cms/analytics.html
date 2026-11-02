@@ -373,6 +373,21 @@
       </div>
     </section>
   </div>
+  
+  <!--Service Worker-->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => {
+            console.log('[Service Worker] Registado com sucesso no escopo:', reg.scope);
+          })
+          .catch((err) => {
+            console.error('[Service Worker] Falha ao registrar:', err);
+          });
+      });
+    }
+  </script>
 
   <!-- Inclusão das Bibliotecas e Lógica de Negócio (Parte C) -->
   <script src="../vendor/chart.min.js"></script>

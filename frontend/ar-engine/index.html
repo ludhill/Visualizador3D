@@ -72,6 +72,21 @@
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
   </a-scene>
 
+  <!-- Service Worker (Registro com fallback gracioso) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => {
+            console.log('[Service Worker] Registrado com sucesso no escopo:', reg.scope);
+          })
+          .catch((err) => {
+            console.warn('[Service Worker] Registro ignorado em ambiente local/HTTP:', err.message);
+          });
+      });
+    }
+  </script>
+
   <script type="module" src="js/App.js"></script>
 </body>
 </html>
