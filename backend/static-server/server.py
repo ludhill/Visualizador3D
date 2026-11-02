@@ -66,26 +66,71 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         clean_path = self.path.split('?')[0]
 
         # ----------------------------------------------------------------------
-        # Rota Pública de Informações do Servidor (Necessária para montar o QR Code)
+        # Rota de Analytics: Agregação Estatística (Módulo 5 - Parte A)
         # ----------------------------------------------------------------------
-        if clean_path == '/api/server-info':
-            local_ip = get_local_ip()
+        if clean_path == '/api/analytics':
+            empty_analytics = {
+                "totalSessions": 0,
+                "averageSessionSeconds": 0,
+                "viewsByTarget": {},
+                "hourlyActivity": [0] * 24
+            }
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            info = {
-                "ip": local_ip,
-                "port": PORT,
-                "token": API_TOKEN,
-                "webArUrl": f"https://{local_ip}:{PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
-            }
-            self.wfile.write(json.dumps(info).encode('utf-8'))
+
+            if not os.path.exists(TELEMETRY_PATH):
+                self.wfile.write(json.dumps(empty_analytics).encode('utf-8'))
+                return
+
+            try:
+                with open(TELEMETRY_PATH, 'r', encoding='utf-8') as f:
+                    telemetry_store = json.load(f)
+
+                logs = telemetry_store.get("logs", [])
+                total_duration = 0
+                completed_count = 0
+                hourly_activity = [0] * 24
+
+                for log in logs:
+                    # 1. Agrupa os acessos por hora do dia (extraído da string ISO)
+                    ts = log.get("timestamp")
+                    if ts:
+                        try:
+                            # Trata a string "YYYY-MM-DDTHH:MM:SS.mmmZ" sem bibliotecas externas
+                            time_part = ts.split('T')[1]
+                            hour = int(time_part.split(':')[0])
+                            if 0 <= hour < 24:
+                                hourly_activity[hour] += 1
+                        except Exception:
+                            pass
+
+                    # 2. Acumula o tempo de sessões finalizadas para a média
+                    if log.get("event") == "session_end" and "sessionDurationSeconds" in log:
+                        total_duration += log.get("sessionDurationSeconds", 0)
+                        completed_count += 1
+
+                avg_seconds = round(total_duration / completed_count) if completed_count > 0 else 0
+
+                analytics_data = {
+                    "totalSessions": telemetry_store.get("totalSessions", 0),
+                    "averageSessionSeconds": avg_seconds,
+                    "viewsByTarget": telemetry_store.get("targetViews", {}),
+                    "hourlyActivity": hourly_activity
+                }
+
+                self.wfile.write(json.dumps(analytics_data, ensure_ascii=False).encode('utf-8'))
+
+            except Exception as e:
+                # Caso ocorra falha de leitura, retorna o estado vazio sem quebrar a API
+                self.wfile.write(json.dumps(empty_analytics).encode('utf-8'))
             return
 
         # ----------------------------------------------------------------------
         # Proteção de Segurança: APIs Protegidas e Modelos 3D (.glb)
         # ----------------------------------------------------------------------
-        if clean_path in ['/api/config', '/api/telemetry'] or clean_path.endswith('.glb'):
+        if clean_path in ['/api/config', '/api/telemetry', '/api/analytics'] or clean_path.endswith('.glb'):
             if not self.check_authorization():
                 self.send_response(403)
                 self.send_header('Content-Type', 'application/json')
