@@ -59,9 +59,17 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
         clean_path = self.path.split('?')[0]
         
+        # APIs dinâmicas: Nunca guardar em cache
         if clean_path.startswith('/api/'):
-            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            
+        # Ficheiros 3D pesados (.glb) e marcadores (.mind): Cache longa de 7 dias (604800 s)
         elif clean_path.endswith(('.glb', '.mind')):
+            self.send_header('Cache-Control', 'public, max-age=604800, immutable')
+            
+        # Scripts, folhas de estilo e imagens: Cache de 1 dia (86400 s)
+        elif clean_path.endswith(('.js', '.css', '.png', '.jpg', '.jpeg', '.webp', '.svg')):
             self.send_header('Cache-Control', 'public, max-age=86400')
             
         super().end_headers()
