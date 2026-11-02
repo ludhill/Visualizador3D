@@ -2,7 +2,11 @@ import os
 import json
 import ssl
 import socket
+import threading  # Importação da biblioteca nativa de threads
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+# Lock global para garantir escrita segura no ficheiro de telemetria
+telemetry_file_lock = threading.Lock()
 
 # ==============================================================================
 # CONFIGURAÇÕES GERAIS E SEGURANÇA (MÓDULO 3 & 4)
@@ -215,35 +219,41 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 event_data = json.loads(post_data.decode('utf-8'))
                 os.makedirs(os.path.dirname(TELEMETRY_PATH), exist_ok=True)
 
-                telemetry_store = {
-                    "totalSessions": 0,
-                    "targetViews": {},
-                    "logs": []
-                }
+                # ==============================================================
+                # OPERAÇÃO SEGURA COM FILE LOCK (THREAD-SAFETY)
+                # ==============================================================
+                with telemetry_file_lock:
+                    telemetry_store = {
+                        "totalSessions": 0,
+                        "targetViews": {},
+                        "logs": []
+                    }
 
-                if os.path.exists(TELEMETRY_PATH):
-                    try:
-                        with open(TELEMETRY_PATH, 'r', encoding='utf-8') as f:
-                            telemetry_store = json.load(f)
-                    except Exception:
-                        pass
+                    if os.path.exists(TELEMETRY_PATH):
+                        try:
+                            with open(TELEMETRY_PATH, 'r', encoding='utf-8') as f:
+                                telemetry_store = json.load(f)
+                        except Exception:
+                            pass
 
-                event_type = event_data.get("event")
-                
-                if event_type == "session_start":
-                    telemetry_store["totalSessions"] = telemetry_store.get("totalSessions", 0) + 1
-                elif event_type == "target_found":
-                    target_idx = str(event_data.get("targetIndex", "unknown"))
-                    views = telemetry_store.get("targetViews", {})
-                    views[target_idx] = views.get(target_idx, 0) + 1
-                    telemetry_store["targetViews"] = views
+                    event_type = event_data.get("event")
+                    
+                    if event_type == "session_start":
+                        telemetry_store["totalSessions"] = telemetry_store.get("totalSessions", 0) + 1
+                    elif event_type == "target_found":
+                        target_idx = str(event_data.get("targetIndex", "unknown"))
+                        views = telemetry_store.get("targetViews", {})
+                        views[target_idx] = views.get(target_idx, 0) + 1
+                        telemetry_store["targetViews"] = views
 
-                telemetry_store["logs"].append(event_data)
-                if len(telemetry_store["logs"]) > 100:
-                    telemetry_store["logs"] = telemetry_store["logs"][-100:]
+                    telemetry_store["logs"].append(event_data)
 
-                with open(TELEMETRY_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(telemetry_store, f, indent=2, ensure_ascii=False)
+                    # Limita o histórico aos últimos 500 registos para evitar crescimento indefinido
+                    if len(telemetry_store["logs"]) > 500:
+                        telemetry_store["logs"] = telemetry_store["logs"][-500:]
+
+                    with open(TELEMETRY_PATH, 'w', encoding='utf-8') as f:
+                        json.dump(telemetry_store, f, indent=2, ensure_ascii=False)
 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -255,8 +265,6 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
             return
-
-        self.send_error(404, "Endpoint não encontrado")
 
 
 if __name__ == '__main__':
