@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import ssl
 import socket
@@ -9,6 +10,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # Lock global para garantir escrita segura no ficheiro de telemetria
 telemetry_file_lock = threading.Lock()
+SERVER_PAUSED = False
+httpd_instance = None
 
 # ==============================================================================
 # CONFIGURAÇÕES GERAIS E SEGURANÇA
@@ -132,6 +135,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 "ip": local_ip,
                 "port": PORT,
                 "token": API_TOKEN,
+                "paused": SERVER_PAUSED,
                 "webArUrl": webar_url
             })
             return
@@ -199,6 +203,14 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 return
 
         if clean_path == '/api/config':
+            is_dashboard = 'dashboard=1' in self.path
+            if SERVER_PAUSED and not is_dashboard:
+                self.send_json(503, {
+                    "status": "paused",
+                    "message": "Exposição temporariamente pausada pelo apresentador."
+                })
+                return
+
             if os.path.exists(JSON_PATH):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -290,6 +302,28 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(500, {"status": "error", "message": str(e)})
             return
 
+        if clean_path == '/api/toggle-pause':
+            global SERVER_PAUSED
+            SERVER_PAUSED = not SERVER_PAUSED
+            estado = "pausada" if SERVER_PAUSED else "ativa"
+            print(f" [CMS] Experiência WebAR {estado} pelo apresentador.")
+            self.send_json(200, {
+                "status": "success",
+                "paused": SERVER_PAUSED,
+                "message": f"Exposição {estado}."
+            })
+            return
+
+        if clean_path == '/api/shutdown':
+            print(" [CMS] Encerramento solicitado pelo Dashboard. Finalizando servidor...")
+            self.send_json(200, {
+                "status": "shutting_down",
+                "message": "Servidor encerrado com segurança."
+            })
+            if httpd_instance:
+                threading.Thread(target=httpd_instance.shutdown, daemon=True).start()
+            return
+
         self.send_json(404, {"status": "error", "message": "Endpoint não encontrado."})
 
 
@@ -302,8 +336,15 @@ def open_presenter_panel(protocol):
 
 
 if __name__ == '__main__':
+    ThreadingHTTPServer.allow_reuse_address = True
     server_address = ('', PORT)
-    httpd = ThreadingHTTPServer(server_address, CMSRequestHandler)
+
+    try:
+        httpd = ThreadingHTTPServer(server_address, CMSRequestHandler)
+        httpd_instance = httpd
+    except OSError:
+        print(f" [AVISO] A porta {PORT} já está em uso (o servidor provavelmente já está ativo).")
+        sys.exit(1)
 
     cert_file = os.path.join(BASE_DIR, 'cert.pem')
     key_file = os.path.join(BASE_DIR, 'key.pem')
@@ -320,7 +361,6 @@ if __name__ == '__main__':
 
     print(f" Painel QR Code: {protocol}://localhost:{PORT}/cms")
 
-    # Abre automaticamente a tela do QR Code no navegador do PC Host após 1.2s
     timer = threading.Timer(1.2, open_presenter_panel, args=[protocol])
     timer.daemon = True
     timer.start()
@@ -329,3 +369,5 @@ if __name__ == '__main__':
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n Servidor finalizado.")
+    finally:
+        httpd.server_close()

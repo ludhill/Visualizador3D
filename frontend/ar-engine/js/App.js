@@ -2,6 +2,38 @@ import { SessionManager } from './SessionManager.js';
 import { GestureController } from './GestureController.js';
 import { TelemetryTracker } from './TelemetryTracker.js';
 
+if (window.AFRAME && !AFRAME.components['glb-animator']) {
+  AFRAME.registerComponent('glb-animator', {
+    schema: {
+      playing: { type: 'boolean', default: true },
+      speed: { type: 'number', default: 1.0 }
+    },
+
+    init() {
+      this.mixer = null;
+
+      this.el.addEventListener('model-loaded', (e) => {
+        const model = e.detail.model;
+        const clips = model?.animations || [];
+        if (clips.length === 0) return;
+
+        this.mixer = new THREE.AnimationMixer(model);
+        clips.forEach((clip) => {
+          const action = this.mixer.clipAction(clip);
+          action.setLoop(THREE.LoopRepeat);
+          action.play();
+        });
+      });
+    },
+
+    tick(time, timeDelta) {
+      if (this.mixer && this.data.playing) {
+        this.mixer.update((timeDelta / 1000) * this.data.speed);
+      }
+    }
+  });
+}
+
 const urlParams = new URLSearchParams(window.location.search);
 const token = (urlParams.get('token') || urlParams.get('Token') || '').trim();
 let telemetry = null;
@@ -32,6 +64,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         'X-App-Token': token
       }
     });
+
+    if (response.status === 403 || !response.ok) {
+      showErrorModal();
+      return;
+    }
+
+    if (response.status === 503) {
+      showErrorModal(
+        'Exposição em Pausa',
+        'A experiência WebAR está temporariamente pausada pelo apresentador. Aguarde alguns instantes e atualize a página.'
+      );
+      return;
+    }
 
     if (response.status === 403 || !response.ok) {
       showErrorModal();
@@ -98,7 +143,7 @@ function setupARScene(items, modal, btnReconectar) {
 
     let isModelLoaded = false;
     let modelEntity = null;
-
+    
     targetEntity.addEventListener('targetFound', () => {
       if (!isModelLoaded) {
         console.log(`[AR Engine] Alvo ${item.targetIndex} detectado. Iniciando download do modelo 3D...`);
@@ -109,10 +154,13 @@ function setupARScene(items, modal, btnReconectar) {
         modelEntity.setAttribute('src', modelUrl);
         modelEntity.setAttribute('scale', item.scale || '1 1 1');
         modelEntity.setAttribute('rotation', item.rotation || '0 0 0');
+        modelEntity.setAttribute('glb-animator', 'playing: true; speed: 1');
 
         targetEntity.appendChild(modelEntity);
         new GestureController(modelEntity);
         isModelLoaded = true;
+      } else if (modelEntity) {
+        modelEntity.setAttribute('glb-animator', 'playing: true');
       }
 
       if (telemetry) {
@@ -124,6 +172,10 @@ function setupARScene(items, modal, btnReconectar) {
     });
 
     targetEntity.addEventListener('targetLost', () => {
+      if (modelEntity) {
+        modelEntity.setAttribute('glb-animator', 'playing: false');
+      }
+
       if (telemetry) {
         telemetry.track('target_lost', { 
           targetIndex: item.targetIndex 

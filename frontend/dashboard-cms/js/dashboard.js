@@ -37,6 +37,47 @@ function bindToolbarEvents() {
     window.print();
   });
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+
+  const pauseBtn = document.getElementById('btn-toggle-pause');
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/toggle-pause', {
+          method: 'POST',
+          headers: { 'X-App-Token': apiToken }
+        });
+        const data = await res.json();
+        pauseBtn.innerText = data.paused ? 'Retomar AR' : 'Pausar AR';
+        alert(data.message);
+      } catch (err) {
+        alert('Erro ao alternar pausa da exposição.');
+      }
+    });
+  }
+
+  const shutdownBtn = document.getElementById('btn-shutdown');
+  if (shutdownBtn) {
+    shutdownBtn.addEventListener('click', async () => {
+      if (!confirm('Deseja realmente encerrar o servidor WebAR? Os celulares conectados perderão acesso até que ele seja iniciado novamente.')) {
+        return;
+      }
+      try {
+        const res = await fetch('/api/shutdown', {
+          method: 'POST',
+          headers: { 'X-App-Token': apiToken }
+        });
+        const data = await res.json();
+        document.body.innerHTML = `
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;gap:12px;padding:24px;">
+            <h1 style="color:#f87171;">Servidor Encerrado</h1>
+            <p style="color:#94a3b8;">${data.message} Você já pode fechar esta aba.</p>
+          </div>
+        `;
+      } catch (err) {
+        alert('Não foi possível encerrar o servidor.');
+      }
+    });
+  }
 }
 
 async function initDashboard() {
@@ -45,13 +86,19 @@ async function initDashboard() {
     if (infoRes.ok) {
       const info = await infoRes.json();
       apiToken = info.token || '';
+
       const testLink = document.getElementById('link-test-ar');
       if (testLink && info.webArUrl) testLink.href = info.webArUrl;
+
+      const pauseBtn = document.getElementById('btn-toggle-pause');
+      if (pauseBtn) {
+        pauseBtn.innerText = info.paused ? 'Retomar AR' : 'Pausar AR';
+      }
     }
 
     const [analyticsRes, configRes] = await Promise.all([
       fetch('/api/analytics'),
-      fetch('/api/config', { headers: { 'X-App-Token': apiToken } })
+      fetch('/api/config?dashboard=1', { headers: { 'X-App-Token': apiToken } })
     ]);
 
     if (analyticsRes.ok) analyticsData = await analyticsRes.json();
