@@ -2,22 +2,27 @@ import os
 import json
 import ssl
 import socket
-import threading  # Importação da biblioteca nativa de threads
+import threading
+import webbrowser
+from urllib.parse import unquote
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # Lock global para garantir escrita segura no ficheiro de telemetria
 telemetry_file_lock = threading.Lock()
 
 # ==============================================================================
-# CONFIGURAÇÕES GERAIS E SEGURANÇA (MÓDULO 3 & 4)
+# CONFIGURAÇÕES GERAIS E SEGURANÇA
 # ==============================================================================
-API_TOKEN = "WEBAR_2026"  # Token oficial exigido via QR Code
+API_TOKEN = "WEBAR_2026"
 PORT = 8080
 
-# Diretório raiz do projeto (2 níveis acima de backend/static-server)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 JSON_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'data.json')
 TELEMETRY_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'telemetry.json')
+
+# Caminhos e extensões bloqueados para leitura direta via navegador
+BLOCKED_PREFIXES = ('/backend', '/storage/db', '/.git', '/.vscode')
+BLOCKED_EXTENSIONS = ('.py', '.pem', '.key', '.sh', '.bat', '.md', '.gitignore')
 
 
 def get_local_ip():
@@ -39,13 +44,18 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
 
+    def send_json(self, status_code, payload):
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
+
     def check_authorization(self):
         """
-        Valida se a requisição possui o token correto no cabeçalho HTTP ('X-App-Token')
-        ou como parâmetro na URL (?token=...).
+        Valida o token no cabeçalho HTTP ('X-App-Token') ou na URL (?token=...).
         """
         client_token = self.headers.get('X-App-Token')
-        
+
         if not client_token and '?token=' in self.path:
             try:
                 query = self.path.split('?', 1)[1]
@@ -56,47 +66,78 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
 
         return client_token == API_TOKEN
 
+    def list_directory(self, path):
+        """
+        Blindagem: impede a exposição da árvore de diretórios do servidor.
+        """
+        self.send_json(403, {
+            "status": "error",
+            "message": "Acesso negado. Navegação de diretórios desativada."
+        })
+        return None
+
     def end_headers(self):
-        clean_path = self.path.split('?')[0]
-        
-        # APIs dinâmicas: Nunca guardar em cache
+        clean_path = unquote(self.path.split('?')[0])
+
         if clean_path.startswith('/api/'):
             self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
-            
-        # O ficheiro sw.js nunca deve ser mantido em cache rígido pelo browser
         elif clean_path.endswith('sw.js'):
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-            
-        # Ficheiros 3D pesados (.glb) e marcadores (.mind): Cache longa de 7 dias (604800 s)
         elif clean_path.endswith(('.glb', '.mind')):
             self.send_header('Cache-Control', 'public, max-age=604800, immutable')
-            
-        # Scripts, folhas de estilo e imagens: Cache de 1 dia (86400 s)
         elif clean_path.endswith(('.js', '.css', '.png', '.jpg', '.jpeg', '.webp', '.svg')):
             self.send_header('Cache-Control', 'public, max-age=86400')
-            
+
         super().end_headers()
 
     def do_GET(self):
-        clean_path = self.path.split('?')[0]
+        raw_path = self.path.split('?')[0]
+        clean_path = unquote(raw_path).rstrip('/') or '/'
+        query_string = f"?{self.path.split('?', 1)[1]}" if '?' in self.path else ''
 
+        # ----------------------------------------------------------------------
+        # 1. Redirecionamentos Inteligentes de Entrada
+        # ----------------------------------------------------------------------
+        if clean_path == '/':
+            self.send_response(302)
+            self.send_header('Location', f'/frontend/ar-engine/index.html{query_string}')
+            self.end_headers()
+            return
+
+        if clean_path in ('/cms', '/qrcode', '/admin'):
+            self.send_response(302)
+            self.send_header('Location', '/frontend/cms/qrcode.html')
+            self.end_headers()
+            return
+
+        # ----------------------------------------------------------------------
+        # 2. Blindagem de Arquivos Internos e Diretórios Sensíveis
+        # ----------------------------------------------------------------------
+        lower_path = clean_path.lower()
+        if lower_path.startswith(BLOCKED_PREFIXES) or lower_path.endswith(BLOCKED_EXTENSIONS):
+            self.send_json(403, {
+                "status": "error",
+                "message": "Acesso proibido a recursos internos do servidor."
+            })
+            return
+
+        # ----------------------------------------------------------------------
+        # 3. Rota de Descoberta de IP e URL do QR Code
+        # ----------------------------------------------------------------------
         if clean_path == '/api/server-info':
             local_ip = get_local_ip()
             webar_url = f"https://{local_ip}:{PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
+            self.send_json(200, {
                 "ip": local_ip,
                 "port": PORT,
                 "token": API_TOKEN,
                 "webArUrl": webar_url
-            }).encode('utf-8'))
+            })
             return
 
         # ----------------------------------------------------------------------
-        # Rota de Analytics: Agregação Estatística (Módulo 5 - Parte A)
+        # 4. Rota de Analytics: Agregação Estatística
         # ----------------------------------------------------------------------
         if clean_path == '/api/analytics':
             empty_analytics = {
@@ -106,12 +147,8 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 "hourlyActivity": [0] * 24
             }
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-
             if not os.path.exists(TELEMETRY_PATH):
-                self.wfile.write(json.dumps(empty_analytics).encode('utf-8'))
+                self.send_json(200, empty_analytics)
                 return
 
             try:
@@ -124,11 +161,9 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 hourly_activity = [0] * 24
 
                 for log in logs:
-                    # 1. Agrupa os acessos por hora do dia (extraído da string ISO)
                     ts = log.get("timestamp")
                     if ts:
                         try:
-                            # Trata a string "YYYY-MM-DDTHH:MM:SS.mmmZ" sem bibliotecas externas
                             time_part = ts.split('T')[1]
                             hour = int(time_part.split(':')[0])
                             if 0 <= hour < 24:
@@ -136,45 +171,33 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                         except Exception:
                             pass
 
-                    # 2. Acumula o tempo de sessões finalizadas para a média
                     if log.get("event") == "session_end" and "sessionDurationSeconds" in log:
                         total_duration += log.get("sessionDurationSeconds", 0)
                         completed_count += 1
 
                 avg_seconds = round(total_duration / completed_count) if completed_count > 0 else 0
 
-                analytics_data = {
+                self.send_json(200, {
                     "totalSessions": telemetry_store.get("totalSessions", 0),
                     "averageSessionSeconds": avg_seconds,
                     "viewsByTarget": telemetry_store.get("targetViews", {}),
                     "hourlyActivity": hourly_activity
-                }
-
-                self.wfile.write(json.dumps(analytics_data, ensure_ascii=False).encode('utf-8'))
-
-            except Exception as e:
-                # Caso ocorra falha de leitura, retorna o estado vazio sem quebrar a API
-                self.wfile.write(json.dumps(empty_analytics).encode('utf-8'))
+                })
+            except Exception:
+                self.send_json(200, empty_analytics)
             return
 
         # ----------------------------------------------------------------------
-        # Proteção de Segurança: APIs Protegidas e Modelos 3D (.glb)
+        # 5. Proteção por Token nas APIs e Modelos 3D (.glb)
         # ----------------------------------------------------------------------
-        if clean_path in ['/api/config', '/api/telemetry', '/api/analytics'] or clean_path.endswith('.glb'):
+        if clean_path in ('/api/config', '/api/telemetry') or lower_path.endswith('.glb'):
             if not self.check_authorization():
-                self.send_response(403)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = {
+                self.send_json(403, {
                     "status": "error",
                     "message": "Acesso não autorizado. Token ausente ou inválido."
-                }
-                self.wfile.write(json.dumps(response).encode('utf-8'))
+                })
                 return
 
-        # ----------------------------------------------------------------------
-        # Rotas de API protegidas
-        # ----------------------------------------------------------------------
         if clean_path == '/api/config':
             if os.path.exists(JSON_PATH):
                 self.send_response(200)
@@ -183,40 +206,31 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 with open(JSON_PATH, 'rb') as f:
                     self.wfile.write(f.read())
             else:
-                self.send_response(404)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = {"status": "error", "message": "Arquivo data.json não encontrado."}
-                self.wfile.write(json.dumps(response).encode('utf-8'))
+                self.send_json(404, {"status": "error", "message": "Arquivo data.json não encontrado."})
             return
 
         if clean_path == '/api/telemetry':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
             if os.path.exists(TELEMETRY_PATH):
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
                 with open(TELEMETRY_PATH, 'rb') as f:
                     self.wfile.write(f.read())
             else:
-                empty_data = {"totalSessions": 0, "targetViews": {}, "logs": []}
-                self.wfile.write(json.dumps(empty_data).encode('utf-8'))
+                self.send_json(200, {"totalSessions": 0, "targetViews": {}, "logs": []})
             return
 
         # ----------------------------------------------------------------------
-        # Arquivos Estáticos Padrão
+        # 6. Entrega de Arquivos Estáticos Públicos (Frontend, Vendor, Targets)
         # ----------------------------------------------------------------------
         return super().do_GET()
 
     def do_POST(self):
-        clean_path = self.path.split('?')[0]
+        clean_path = unquote(self.path.split('?')[0]).rstrip('/')
 
         if clean_path.startswith('/api/'):
             if not self.check_authorization():
-                self.send_response(403)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = {"status": "error", "message": "Acesso não autorizado."}
-                self.wfile.write(json.dumps(response).encode('utf-8'))
+                self.send_json(403, {"status": "error", "message": "Acesso não autorizado."})
                 return
 
         content_length = int(self.headers.get('Content-Length', 0))
@@ -229,15 +243,9 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 with open(JSON_PATH, 'w', encoding='utf-8') as f:
                     json.dump(parsed_json, f, indent=2, ensure_ascii=False)
 
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "Configuração salva!"}).encode('utf-8'))
+                self.send_json(200, {"status": "success", "message": "Configuração salva!"})
             except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+                self.send_json(500, {"status": "error", "message": str(e)})
             return
 
         if clean_path == '/api/telemetry':
@@ -245,9 +253,6 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 event_data = json.loads(post_data.decode('utf-8'))
                 os.makedirs(os.path.dirname(TELEMETRY_PATH), exist_ok=True)
 
-                # ==============================================================
-                # OPERAÇÃO SEGURA COM FILE LOCK (THREAD-SAFETY)
-                # ==============================================================
                 with telemetry_file_lock:
                     telemetry_store = {
                         "totalSessions": 0,
@@ -263,7 +268,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                             pass
 
                     event_type = event_data.get("event")
-                    
+
                     if event_type == "session_start":
                         telemetry_store["totalSessions"] = telemetry_store.get("totalSessions", 0) + 1
                     elif event_type == "target_found":
@@ -274,23 +279,26 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
 
                     telemetry_store["logs"].append(event_data)
 
-                    # Limita o histórico aos últimos 500 registos para evitar crescimento indefinido
                     if len(telemetry_store["logs"]) > 500:
                         telemetry_store["logs"] = telemetry_store["logs"][-500:]
 
                     with open(TELEMETRY_PATH, 'w', encoding='utf-8') as f:
                         json.dump(telemetry_store, f, indent=2, ensure_ascii=False)
 
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "recorded"}).encode('utf-8'))
+                self.send_json(200, {"status": "recorded"})
             except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+                self.send_json(500, {"status": "error", "message": str(e)})
             return
+
+        self.send_json(404, {"status": "error", "message": "Endpoint não encontrado."})
+
+
+def open_presenter_panel(protocol):
+    url = f"{protocol}://localhost:{PORT}/frontend/cms/qrcode.html"
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':
@@ -304,9 +312,18 @@ if __name__ == '__main__':
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(certfile=cert_file, keyfile=key_file)
         httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+        protocol = "https"
         print(f" Servidor HTTPS WebAR-CMS ativo na porta {PORT}...")
     else:
-        print(f" Certificados SSL não encontrados na raiz. Servidor rodando em HTTP (Porta {PORT})...")
+        protocol = "http"
+        print(f" Certificados SSL não encontrados. Servidor rodando em HTTP (Porta {PORT})...")
+
+    print(f" Painel QR Code: {protocol}://localhost:{PORT}/cms")
+
+    # Abre automaticamente a tela do QR Code no navegador do PC Host após 1.2s
+    timer = threading.Timer(1.2, open_presenter_panel, args=[protocol])
+    timer.daemon = True
+    timer.start()
 
     try:
         httpd.serve_forever()
