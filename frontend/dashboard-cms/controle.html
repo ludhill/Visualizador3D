@@ -1,32 +1,118 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
-
+<html lang="pt-BR" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <title>Dashboard CMS — WebAR Local</title>
-    <!-- Dependência externa -->
-    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
-    <!-- Estilo Local -->
-    <link rel="stylesheet" href="css/dashboard.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard CMS & Analytics — WebAR Exposição</title>
+  <link rel="stylesheet" href="css/dashboard.css">
 </head>
-
 <body>
 
-    <div class="panel list-panel">
-        <h2>Mapeamento de Alvos e Modelos</h2>
-        <div id="items-container">Carregando dados...</div>
-        <br>
-        <button id="btn-salvar">Salvar Alterações</button>
+  <header class="topbar no-print">
+    <div class="topbar-left">
+      <span class="brand">WebAR CMS</span>
+      <nav class="nav-links">
+        <a href="/frontend/cms/qrcode.html">QR Code Estande</a>
+        <a href="/frontend/dashboard-cms/controle.html" class="active">Analytics & Modelos</a>
+        <a href="#" id="link-test-ar" target="_blank">Testar Cena AR</a>
+      </nav>
     </div>
 
-    <div class="panel preview-panel">
-        <h2>Pré-visualização 3D (PC)</h2>
-        <model-viewer id="viewer" src="" camera-controls auto-rotate shadow-intensity="1"></model-viewer>
-        <p id="preview-info">Selecione um item para inspecionar</p>
+    <div class="topbar-actions">
+      <button type="button" id="btn-font-dec" title="Diminuir fonte">A-</button>
+      <button type="button" id="btn-font-inc" title="Aumentar fonte">A+</button>
+      <button type="button" id="btn-theme" title="Alternar tema Claro/Escuro">Tema</button>
+      <button type="button" id="btn-refresh">Atualizar</button>
+      <button type="button" id="btn-export-csv">Exportar CSV</button>
+      <button type="button" id="btn-print" class="btn-primary">Imprimir A4</button>
     </div>
+  </header>
 
-    <!-- Script Local -->
-    <script src="js/dashboard.js"></script>
+  <main class="container">
+    <section class="print-header">
+      <h1>Relatório de Telemetria & Catálogo WebAR — CVT Espacial</h1>
+      <p id="report-meta">Gerado em: --</p>
+    </section>
+
+    <!-- Indicadores Principais (KPIs) -->
+    <section class="kpi-grid" aria-label="Indicadores Principais">
+      <article class="kpi-card">
+        <span class="kpi-label">Total de Sessões</span>
+        <strong class="kpi-value" id="kpi-sessions">0</strong>
+        <span class="kpi-sub">Acessos autenticados via QR Code</span>
+      </article>
+
+      <article class="kpi-card">
+        <span class="kpi-label">Duração Média</span>
+        <strong class="kpi-value" id="kpi-duration">0s</strong>
+        <span class="kpi-sub">Tempo médio por visitante</span>
+      </article>
+
+      <article class="kpi-card">
+        <span class="kpi-label">Total de Visualizações</span>
+        <strong class="kpi-value" id="kpi-views">0</strong>
+        <span class="kpi-sub">Detecções de marcadores 3D</span>
+      </article>
+
+      <article class="kpi-card">
+        <span class="kpi-label">Alvo Mais Popular</span>
+        <strong class="kpi-value kpi-highlight" id="kpi-top-target">—</strong>
+        <span class="kpi-sub" id="kpi-top-count">Aguardando leituras</span>
+      </article>
+    </section>
+
+    <!-- Gráficos Visuais (100% Offline, prontos para impressão A4) -->
+    <section class="charts-grid">
+      <article class="panel">
+        <div class="panel-header">
+          <h2>Visualizações por Alvo (9 Modelos)</h2>
+          <span class="badge-info">Ranking em tempo real</span>
+        </div>
+        <div id="targets-chart" class="bar-chart-list">
+          <p class="empty-msg">Nenhum dado registrado ainda.</p>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <h2>Atividade por Hora (00h – 23h)</h2>
+          <span class="badge-info">Eventos registrados</span>
+        </div>
+        <div id="hourly-chart" class="hourly-chart"></div>
+      </article>
+    </section>
+
+    <!-- Gestão dos 9 Modelos (CRUD no storage/db/data.json) -->
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Configuração dos 9 Alvos & Modelos 3D</h2>
+          <p class="panel-desc">Altere nomes, escalas, rotações ou ative/desative alvos sem editar código.</p>
+        </div>
+        <button type="button" id="btn-save-config" class="btn-success no-print">Salvar no Servidor</button>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="cms-table">
+          <thead>
+            <tr>
+              <th>Índice</th>
+              <th>Nome de Exibição</th>
+              <th>Arquivo .GLB</th>
+              <th>Escala (X Y Z)</th>
+              <th>Rotação</th>
+              <th>Views</th>
+              <th>Ativo</th>
+            </tr>
+          </thead>
+          <tbody id="models-tbody">
+            <tr><td colspan="7">Carregando modelos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/dashboard.js"></script>
 </body>
-
 </html>
