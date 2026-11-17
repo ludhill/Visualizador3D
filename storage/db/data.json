@@ -5,7 +5,7 @@
       "id": "item-1",
       "name": "Modelo Principal 1",
       "targetIndex": 0,
-      "modelFile": "modelo1.glb",
+      "modelFile": "modelo_1.glb",
       "scale": "0.5 0.5 0.5",
       "rotation": "0 0 0",
       "active": true
@@ -14,7 +14,70 @@
       "id": "item-2",
       "name": "Modelo Secundário 2",
       "targetIndex": 1,
-      "modelFile": "modelo2.glb",
+      "modelFile": "modelo_2.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-3",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_3.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-4",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_4.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-5",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_5.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-6",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_6.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-7",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_7.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-8",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_8.glb",
+      "scale": "1 1 1",
+      "rotation": "0 90 0",
+      "active": true
+    },
+    {
+      "id": "item-9",
+      "name": "Modelo Secundário 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_9.glb",
       "scale": "1 1 1",
       "rotation": "0 90 0",
       "active": true
