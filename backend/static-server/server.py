@@ -81,6 +81,20 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         clean_path = self.path.split('?')[0]
 
+        if clean_path == '/api/server-info':
+            local_ip = get_local_ip()
+            webar_url = f"https://{local_ip}:{PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "ip": local_ip,
+                "port": PORT,
+                "token": API_TOKEN,
+                "webArUrl": webar_url
+            }).encode('utf-8'))
+            return
+
         # ----------------------------------------------------------------------
         # Rota de Analytics: Agregação Estatística (Módulo 5 - Parte A)
         # ----------------------------------------------------------------------
