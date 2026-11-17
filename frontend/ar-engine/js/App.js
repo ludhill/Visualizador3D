@@ -3,23 +3,30 @@ import { GestureController } from './GestureController.js';
 import { TelemetryTracker } from './TelemetryTracker.js';
 
 const urlParams = new URLSearchParams(window.location.search);
-const token = urlParams.get('token') || '';
+const token = (urlParams.get('token') || urlParams.get('Token') || '').trim();
 let telemetry = null;
 
-document.addEventListener('DOMContentLoaded', async () => {
+function showErrorModal(title, message) {
   const deniedModal = document.getElementById('denied-modal');
+  if (!deniedModal) return;
+  const h1 = deniedModal.querySelector('h1');
+  const p = deniedModal.querySelector('p');
+  if (h1 && title) h1.innerText = title;
+  if (p && message) p.innerText = message;
+  deniedModal.style.display = 'flex';
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
   const sleepModal = document.getElementById('sleep-modal');
   const btnReconectar = document.getElementById('btn-reconnect');
   const scene = document.querySelector('a-scene');
 
-  // Bloqueia imediatamente se não houver token na URL
   if (!token) {
-    if (deniedModal) deniedModal.style.display = 'flex';
+    showErrorModal();
     return;
   }
 
   try {
-    // Valida o token com a API Backend
     const response = await fetch('/api/config', {
       headers: {
         'X-App-Token': token
@@ -27,23 +34,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (response.status === 403 || !response.ok) {
-      if (deniedModal) deniedModal.style.display = 'flex';
+      showErrorModal();
       return;
     }
 
-    // Inicializa a Telemetria e registra o início da sessão
+    // Valida o JSON antes de iniciar telemetria e limpar a URL
+    const config = await response.json();
+
     telemetry = new TelemetryTracker(token);
     telemetry.track('session_start');
 
-    // Mascara o token da URL para não ficar visível na barra do navegador
     const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
     window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
 
-    // Configura as entidades da cena WebAR (Lazy Loading ativado)
-    const config = await response.json();
     setupARScene(config.items, sleepModal, btnReconectar);
 
-    // Inicia a câmera e o rastreamento MindAR somente agora que tudo foi validado
     const arSystem = scene.systems['mindar-image-system'];
     if (arSystem) {
       arSystem.start();
@@ -51,11 +56,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   } catch (error) {
     console.error("[AR Engine] Erro ao carregar dados:", error);
-    if (deniedModal) deniedModal.style.display = 'flex';
+    showErrorModal(
+      "Erro na Configuração 3D",
+      `Falha ao ler data.json: ${error.message}`
+    );
   }
 });
 
-// Registra a saída do usuário
 window.addEventListener('beforeunload', () => {
   if (telemetry) {
     telemetry.track('session_end');
@@ -85,7 +92,6 @@ function setupARScene(items, modal, btnReconectar) {
   items.forEach((item) => {
     if (!item.active) return;
 
-    // Instancia apenas o nó do alvo MindAR
     const targetEntity = document.createElement('a-entity');
     targetEntity.setAttribute('mindar-image-target', `targetIndex: ${item.targetIndex}`);
     scene.appendChild(targetEntity);
@@ -93,7 +99,6 @@ function setupARScene(items, modal, btnReconectar) {
     let isModelLoaded = false;
     let modelEntity = null;
 
-    // Carregamento Sob Demanda (Lazy Loading) disparado no targetFound
     targetEntity.addEventListener('targetFound', () => {
       if (!isModelLoaded) {
         console.log(`[AR Engine] Alvo ${item.targetIndex} detectado. Iniciando download do modelo 3D...`);
@@ -106,8 +111,6 @@ function setupARScene(items, modal, btnReconectar) {
         modelEntity.setAttribute('rotation', item.rotation || '0 0 0');
 
         targetEntity.appendChild(modelEntity);
-        
-        // Associa o controlador de gestos ao modelo recém-carregado
         new GestureController(modelEntity);
         isModelLoaded = true;
       }
