@@ -1,6 +1,7 @@
 let apiToken = '';
 let adminPin = sessionStorage.getItem('webar_admin_pin') || '';
 let captchaExpected = 0;
+let lockoutTimer = null;
 
 let cmsData = { version: '1.0.0', items: [] };
 let analyticsData = {
@@ -18,9 +19,50 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initDashboard();
 });
 
+function setAuthFormDisabled(disabled, btnText = 'Desbloquear Painel') {
+  const captchaInput = document.getElementById('captcha-input');
+  const pinInput = document.getElementById('admin-pin-input');
+  const submitBtn = document.getElementById('btn-unlock-cms');
+
+  if (captchaInput) captchaInput.disabled = disabled;
+  if (pinInput) pinInput.disabled = disabled;
+  if (submitBtn) {
+    submitBtn.disabled = disabled;
+    submitBtn.innerText = btnText;
+  }
+}
+
+function startLockoutCountdown(seconds) {
+  if (lockoutTimer) clearInterval(lockoutTimer);
+  let remaining = Math.max(1, Number(seconds) || 30);
+
+  const errorEl = document.getElementById('auth-error-msg');
+  const updateUI = () => {
+    setAuthFormDisabled(true, `Bloqueado (${remaining}s)`);
+    if (errorEl) {
+      errorEl.innerText = `IP bloqueado por excesso de tentativas. Aguarde ${remaining}s para tentar novamente.`;
+    }
+  };
+
+  updateUI();
+
+  lockoutTimer = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      clearInterval(lockoutTimer);
+      lockoutTimer = null;
+      setAuthFormDisabled(false, 'Desbloquear Painel');
+      if (errorEl) errorEl.innerText = '';
+      generateHumanChallenge();
+    } else {
+      updateUI();
+    }
+  }, 1000);
+}
+
 function generateHumanChallenge() {
-  const a = Math.floor(Math.random() * 9) + 2; // 2 a 10
-  const b = Math.floor(Math.random() * 9) + 1; // 1 a 9
+  const a = Math.floor(Math.random() * 9) + 2;
+  const b = Math.floor(Math.random() * 9) + 1;
   captchaExpected = a + b;
 
   const label = document.getElementById('captcha-label');
@@ -57,6 +99,8 @@ function bindAuthEvents() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (lockoutTimer) return;
+
     const errorEl = document.getElementById('auth-error-msg');
     const captchaVal = Number(document.getElementById('captcha-input').value);
     const pinVal = document.getElementById('admin-pin-input').value.trim();
@@ -81,6 +125,8 @@ function bindAuthEvents() {
       if (res.ok && data.status === 'authorized') {
         unlockDashboard(pinVal);
         await initDashboard();
+      } else if (res.status === 429) {
+        startLockoutCountdown(data.retryAfter || 30);
       } else {
         errorEl.innerText = data.message || 'PIN administrativo incorreto.';
         generateHumanChallenge();
@@ -189,6 +235,13 @@ async function initDashboard() {
     const infoRes = await fetch('/api/server-info');
     if (infoRes.ok) {
       const info = await infoRes.json();
+
+      if (info.adminLockedSeconds > 0) {
+        lockDashboard('');
+        startLockoutCountdown(info.adminLockedSeconds);
+        return;
+      }
+      
       apiToken = info.token || '';
 
       const testLink = document.getElementById('link-test-ar');

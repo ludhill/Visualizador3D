@@ -92,12 +92,17 @@
       margin-bottom: 20px;
       letter-spacing: 0.05em;
     }
+    .badge.paused {
+      background-color: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.35);
+    }
     .badge-dot {
       width: 8px;
       height: 8px;
-      background-color: #22c55e;
+      background-color: currentColor;
       border-radius: 50%;
-      box-shadow: 0 0 8px #22c55e;
+      box-shadow: 0 0 8px currentColor;
     }
     h1 { font-size: 1.6rem; font-weight: 600; margin-bottom: 10px; color: #f1f5f9; }
     p.subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 28px; line-height: 1.4; }
@@ -127,7 +132,7 @@
 
   <nav class="presenter-hud" aria-label="Navegação do Apresentador">
     <a href="/frontend/cms/qrcode.html" class="active">QR Code Estande</a>
-    <a href="/frontend/dashboard-cms/controle.html">Analytics & Modelos</a>
+    <a href="/frontend/dashboard-cms/controle.html" id="link-analytics">Analytics & Modelos</a>
     <a href="#" id="btn-test-ar" target="_blank">Testar Cena AR</a>
     <button type="button" id="btn-hide-hud">Ocultar Menu</button>
   </nav>
@@ -154,8 +159,10 @@
   <script>
     async function initQRCode() {
       const urlTextElement = document.getElementById('url-text');
+      const statusBadge = document.getElementById('status-badge');
       const statusTextElement = document.getElementById('status-text');
       const testArLink = document.getElementById('btn-test-ar');
+      const analyticsLink = document.getElementById('link-analytics');
 
       try {
         const response = await fetch('/api/server-info');
@@ -165,14 +172,30 @@
         urlTextElement.innerText = data.webArUrl;
         testArLink.href = data.webArUrl;
 
+        if (data.paused) {
+          statusBadge.classList.add('paused');
+          statusTextElement.innerText = 'EXPOSIÇÃO EM PAUSA';
+        } else {
+          statusBadge.classList.remove('paused');
+          statusTextElement.innerText = 'SERVIDOR ONLINE';
+        }
+
+        // Oculta o acesso ao painel administrativo enquanto o IP estiver bloqueado
+        if (analyticsLink && data.adminLockedSeconds > 0) {
+          analyticsLink.style.display = 'none';
+          setTimeout(() => {
+            analyticsLink.style.display = '';
+          }, data.adminLockedSeconds * 1000);
+        }
+
         new QRious({
           element: document.getElementById('qrcode-box'),
           value: data.webArUrl,
           size: 220
         });
       } catch (err) {
-        console.error("Erro na leitura das informações do servidor:", err);
-        statusTextElement.innerText = "ERRO DE CONEXÃO";
+        console.error('Erro na leitura das informações do servidor:', err);
+        statusTextElement.innerText = 'ERRO DE CONEXÃO';
         urlTextElement.classList.add('error-text');
         urlTextElement.innerText = 'Impossível comunicar com /api/server-info';
       }

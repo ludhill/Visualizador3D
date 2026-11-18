@@ -147,11 +147,21 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         if clean_path == '/api/server-info':
             local_ip = get_local_ip()
             webar_url = f"https://{local_ip}:{PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
+            client_ip = self.client_address[0]
+            now = time.time()
+            locked_seconds = 0
+
+            with admin_lock:
+                record = admin_attempts.get(client_ip)
+                if record and record.get("locked_until", 0) > now:
+                    locked_seconds = int(record["locked_until"] - now) + 1
+
             self.send_json(200, {
                 "ip": local_ip,
                 "port": PORT,
                 "token": API_TOKEN,
                 "paused": SERVER_PAUSED,
+                "adminLockedSeconds": locked_seconds,
                 "webArUrl": webar_url
             })
             return
@@ -277,7 +287,8 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                     wait_sec = int(record["locked_until"] - now) + 1
                     self.send_json(429, {
                         "status": "locked",
-                        "message": f"Muitas tentativas incorretas. Aguarde {wait_sec}s."
+                        "retryAfter": wait_sec,
+                        "message": f"IP bloqueado temporariamente. Aguarde {wait_sec}s."
                     })
                     return
 
@@ -296,15 +307,26 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 })
             else:
                 with admin_lock:
-                    record["fails"] = record.get("fails", 0) + 1
-                    if record["fails"] >= 5:
+                    fails = record.get("fails", 0) + 1
+                    if fails >= 5:
                         record["locked_until"] = now + 30
                         record["fails"] = 0
+                        admin_attempts[client_ip] = record
+                        self.send_json(429, {
+                            "status": "locked",
+                            "retryAfter": 30,
+                            "message": "5 tentativas incorretas. IP bloqueado por 30s."
+                        })
+                        return
+
+                    record["fails"] = fails
                     admin_attempts[client_ip] = record
+                    remaining = 5 - fails
 
                 self.send_json(401, {
                     "status": "unauthorized",
-                    "message": "PIN administrativo incorreto."
+                    "remainingAttempts": remaining,
+                    "message": f"PIN incorreto. Restam {remaining} tentativa(s)."
                 })
             return
 
