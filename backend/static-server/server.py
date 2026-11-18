@@ -5,34 +5,32 @@ import time
 import hmac
 import json
 import ssl
+import shutil
 import struct
 import socket
 import threading
+import subprocess
 import unicodedata
 import webbrowser
+import urllib.request
 from datetime import datetime
 from urllib.parse import unquote
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-# Locks globais para escrita segura em disco e controle de tentativas de PIN
-telemetry_file_lock = threading.Lock()
-upload_file_lock = threading.Lock()
-SERVER_PAUSED = False
-httpd_instance = None
-
-# Controle de tentativas de PIN por IP: { ip: {"fails": int, "locked_until": float} }
-admin_attempts = {}
-admin_lock = threading.Lock()
-
 # ==============================================================================
-# CONFIGURAÇÕES GERAIS E SEGURANÇA
+# CONFIGURAÇÕES GERAIS, PORTAS E SEGURANÇA
 # ==============================================================================
 API_TOKEN = "WEBAR_2026"
 ADMIN_PIN = "2026"
-PORT = 8080
+MDNS_HOSTNAME = "cvtespacial.local"
 
-MAX_GLB_BYTES = 25 * 1024 * 1024   # 25 MB
-MAX_MIND_BYTES = 15 * 1024 * 1024  # 15 MB
+CANDIDATE_PORTS = [8080, 8443, 8081, 8888]
+ACTIVE_PORT = 8080
+ACTIVE_PROTOCOL = "https"
+
+MAX_GLB_BYTES = 25 * 1024 * 1024     # 25 MB
+MAX_MIND_BYTES = 15 * 1024 * 1024    # 15 MB
+MIN_FREE_DISK_BYTES = 100 * 1024 * 1024  # 100 MB livres exigidos para upload
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 JSON_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'data.json')
@@ -40,30 +38,191 @@ TELEMETRY_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'telemetry.json')
 MODELS_DIR = os.path.join(BASE_DIR, 'storage', 'models')
 TARGETS_DIR = os.path.join(BASE_DIR, 'storage', 'targets')
 
+# Locks globais para escrita atômica e controle de tentativas administrativas
+config_file_lock = threading.Lock()
+telemetry_file_lock = threading.Lock()
+upload_file_lock = threading.Lock()
+admin_lock = threading.Lock()
+
+SERVER_PAUSED = False
+httpd_instance = None
+
+# Controle de tentativas de PIN por IP: { ip: {"fails": int, "locked_until": float} }
+admin_attempts = {}
+
 # Caminhos e extensões bloqueados para leitura direta via navegador
 BLOCKED_PREFIXES = ('/backend', '/storage/db', '/.git', '/.vscode')
-BLOCKED_EXTENSIONS = ('.py', '.pem', '.key', '.sh', '.bat', '.md', '.gitignore')
+BLOCKED_EXTENSIONS = ('.py', '.pem', '.key', '.sh', '.bat', '.md', '.gitignore', '.bak', '.tmp')
 
 
+# ==============================================================================
+# UTILITÁRIOS DE REDE, SSL E PERSISTÊNCIA RESILIENTE
+# ==============================================================================
 def get_local_ip():
     """
-    Descobre dinamicamente o IP privado da máquina host na rede local.
+    Retorna IPv4 privado válido da rede local, ignorando loopback (127.*)
+    e endereço automático sem roteador/APIPA (169.254.*).
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(('10.255.255.255', 1))
         ip = s.getsockname()[0]
+        if ip.startswith(('127.', '169.254.')):
+            return '127.0.0.1'
+        return ip
     except Exception:
-        ip = '127.0.0.1'
+        return '127.0.0.1'
     finally:
         s.close()
-    return ip
+
+
+def read_json_resilient(file_path, default_factory):
+    """
+    Lê um arquivo JSON com recuperação automática via .bak caso o principal
+    esteja corrompido (JSONDecodeError).
+    """
+    bak_path = f"{file_path}.bak"
+
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as err:
+            print(f" [AVISO] Falha ao ler {os.path.basename(file_path)} ({err}). Tentando restaurar backup...")
+
+    if os.path.exists(bak_path):
+        try:
+            with open(bak_path, 'r', encoding='utf-8') as f:
+                recovered = json.load(f)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            shutil.copy2(bak_path, file_path)
+            print(f" [RECUPERADO] {os.path.basename(file_path)} restaurado a partir do .bak.")
+            return recovered
+        except Exception:
+            pass
+
+    return default_factory()
+
+
+def write_json_atomic(file_path, payload):
+    """
+    Grava JSON de forma atômica (.tmp -> os.replace) preservando cópia .bak
+    da última versão íntegra.
+    """
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    bak_path = f"{file_path}.bak"
+    tmp_path = f"{file_path}.tmp"
+
+    if os.path.exists(file_path):
+        try:
+            shutil.copy2(file_path, bak_path)
+        except Exception:
+            pass
+
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+
+    os.replace(tmp_path, file_path)
+
+
+def generate_self_signed_cert(cert_file, key_file):
+    """
+    Tenta gerar cert.pem e key.pem via OpenSSL com SAN para localhost e mDNS.
+    """
+    cmd = [
+        'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
+        '-keyout', key_file, '-out', cert_file,
+        '-days', '365', '-nodes',
+        '-subj', f'/CN={MDNS_HOSTNAME}',
+        '-addext', f'subjectAltName=DNS:{MDNS_HOSTNAME},DNS:localhost,IP:127.0.0.1'
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+        if res.returncode == 0 and os.path.exists(cert_file) and os.path.exists(key_file):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def configure_ssl_with_recovery(httpd):
+    """
+    Ativa HTTPS no socket do servidor. Se cert.pem/key.pem estiverem ausentes
+    ou corrompidos (ssl.SSLError), tenta regenerar automaticamente via OpenSSL
+    antes de recorrer ao fallback HTTP.
+    """
+    cert_file = os.path.join(BASE_DIR, 'cert.pem')
+    key_file = os.path.join(BASE_DIR, 'key.pem')
+
+    for attempt in range(2):
+        if os.path.exists(cert_file) and os.path.exists(key_file):
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+                httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+                return "https"
+            except (ssl.SSLError, OSError) as err:
+                print(f" [AVISO] Certificado SSL inválido ou corrompido ({err}). Isolando arquivos...")
+                for broken in (cert_file, key_file):
+                    if os.path.exists(broken):
+                        try:
+                            os.replace(broken, f"{broken}.broken")
+                        except Exception:
+                            pass
+
+        if attempt == 0:
+            print(" [SSL] Tentando gerar certificado autoassinado via OpenSSL...")
+            if generate_self_signed_cert(cert_file, key_file):
+                print(" [SSL] Novo par cert.pem / key.pem gerado com sucesso.")
+                continue
+        break
+
+    print(" [AVISO] OpenSSL indisponível ou falha no certificado. Iniciando em HTTP (câmera móvel exige HTTPS).")
+    return "http"
+
+
+def is_webar_already_running(port):
+    """
+    Verifica se a porta ocupada já pertence a uma instância ativa do WebAR-CMS.
+    """
+    ctx = ssl._create_unverified_context()
+    for scheme in ('https', 'http'):
+        try:
+            url = f"{scheme}://127.0.0.1:{port}/api/server-info"
+            with urllib.request.urlopen(url, timeout=0.8, context=ctx) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                if 'webArUrl' in data:
+                    return scheme
+        except Exception:
+            continue
+    return None
+
+
+def bind_available_port(handler_cls):
+    """
+    Tenta subir na porta 8080; se já houver um WebAR ativo, reaproveita-o;
+    se estiver ocupada por outro serviço, chaveia automaticamente para a próxima.
+    """
+    ThreadingHTTPServer.allow_reuse_address = True
+
+    for port in CANDIDATE_PORTS:
+        try:
+            server = ThreadingHTTPServer(('', port), handler_cls)
+            return server, port, None
+        except OSError:
+            existing_scheme = is_webar_already_running(port)
+            if existing_scheme:
+                return None, port, existing_scheme
+            print(f" [AVISO] Porta {port} ocupada por outro processo. Tentando próxima...")
+
+    raise RuntimeError(f"Nenhuma porta disponível entre {CANDIDATE_PORTS}.")
 
 
 def slugify_filename(raw_name, expected_ext):
     """
     Remove acentos, espaços e caracteres inválidos para gerar nomes seguros em URL.
-    Ex: 'Foguete Sonda IV (Final!).glb' -> 'foguete-sonda-iv-final.glb'
     """
     base_name = os.path.basename(unquote(raw_name or '')).strip()
     stem, ext = os.path.splitext(base_name)
@@ -101,9 +260,22 @@ def validate_binary_asset(data, upload_type):
     return False, "Tipo de upload desconhecido."
 
 
+# ==============================================================================
+# HANDLER HTTP/HTTPS MULTITHREAD
+# ==============================================================================
 class CMSRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
+
+    def handle(self):
+        """
+        Suprime erros de socket quando smartphones bloqueiam a tela ou saem do
+        alcance do Wi-Fi no meio da transferência de arquivos 3D.
+        """
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, ssl.SSLEOFError, ssl.SSLError):
+            pass
 
     def send_json(self, status_code, payload):
         self.send_response(status_code)
@@ -179,10 +351,18 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             })
             return
 
-        # 3. Rota de Descoberta de IP e URL do QR Code
+        # 3. Healthcheck Leve para Sonda de Rede / Canal Duplo
+        if clean_path == '/api/ping':
+            self.send_json(200, {"status": "ok", "port": ACTIVE_PORT})
+            return
+
+        # 4. Rota de Descoberta de IP, Porta Ativa e URL do QR Code
         if clean_path == '/api/server-info':
             local_ip = get_local_ip()
-            webar_url = f"https://{local_ip}:{PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
+            network_online = local_ip != '127.0.0.1'
+            webar_url = f"{ACTIVE_PROTOCOL}://{local_ip}:{ACTIVE_PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
+            mdns_url = f"{ACTIVE_PROTOCOL}://{MDNS_HOSTNAME}:{ACTIVE_PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
+
             client_ip = self.client_address[0]
             now = time.time()
             locked_seconds = 0
@@ -194,64 +374,56 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
 
             self.send_json(200, {
                 "ip": local_ip,
-                "port": PORT,
+                "port": ACTIVE_PORT,
+                "protocol": ACTIVE_PROTOCOL,
+                "networkOnline": network_online,
                 "token": API_TOKEN,
                 "paused": SERVER_PAUSED,
                 "adminLockedSeconds": locked_seconds,
-                "webArUrl": webar_url
+                "webArUrl": webar_url,
+                "mdnsUrl": mdns_url
             })
             return
 
-        # 4. Rota de Analytics: Agregação Estatística
+        # 5. Rota de Analytics: Agregação Estatística (com recuperação de JSON)
         if clean_path == '/api/analytics':
-            empty_analytics = {
-                "totalSessions": 0,
-                "averageSessionSeconds": 0,
-                "viewsByTarget": {},
-                "hourlyActivity": [0] * 24
-            }
+            with telemetry_file_lock:
+                telemetry_store = read_json_resilient(
+                    TELEMETRY_PATH,
+                    lambda: {"totalSessions": 0, "targetViews": {}, "logs": []}
+                )
 
-            if not os.path.exists(TELEMETRY_PATH):
-                self.send_json(200, empty_analytics)
-                return
+            logs = telemetry_store.get("logs", [])
+            total_duration = 0
+            completed_count = 0
+            hourly_activity = [0] * 24
 
-            try:
-                with open(TELEMETRY_PATH, 'r', encoding='utf-8') as f:
-                    telemetry_store = json.load(f)
+            for log in logs:
+                ts = log.get("timestamp")
+                if ts:
+                    try:
+                        time_part = ts.split('T')[1]
+                        hour = int(time_part.split(':')[0])
+                        if 0 <= hour < 24:
+                            hourly_activity[hour] += 1
+                    except Exception:
+                        pass
 
-                logs = telemetry_store.get("logs", [])
-                total_duration = 0
-                completed_count = 0
-                hourly_activity = [0] * 24
+                if log.get("event") == "session_end" and "sessionDurationSeconds" in log:
+                    total_duration += log.get("sessionDurationSeconds", 0)
+                    completed_count += 1
 
-                for log in logs:
-                    ts = log.get("timestamp")
-                    if ts:
-                        try:
-                            time_part = ts.split('T')[1]
-                            hour = int(time_part.split(':')[0])
-                            if 0 <= hour < 24:
-                                hourly_activity[hour] += 1
-                        except Exception:
-                            pass
+            avg_seconds = round(total_duration / completed_count) if completed_count > 0 else 0
 
-                    if log.get("event") == "session_end" and "sessionDurationSeconds" in log:
-                        total_duration += log.get("sessionDurationSeconds", 0)
-                        completed_count += 1
-
-                avg_seconds = round(total_duration / completed_count) if completed_count > 0 else 0
-
-                self.send_json(200, {
-                    "totalSessions": telemetry_store.get("totalSessions", 0),
-                    "averageSessionSeconds": avg_seconds,
-                    "viewsByTarget": telemetry_store.get("targetViews", {}),
-                    "hourlyActivity": hourly_activity
-                })
-            except Exception:
-                self.send_json(200, empty_analytics)
+            self.send_json(200, {
+                "totalSessions": telemetry_store.get("totalSessions", 0),
+                "averageSessionSeconds": avg_seconds,
+                "viewsByTarget": telemetry_store.get("targetViews", {}),
+                "hourlyActivity": hourly_activity
+            })
             return
 
-        # 5. Inventário de Ativos (.glb e targets.mind) para o CMS (Admin)
+        # 6. Inventário de Ativos (.glb e targets.mind) para o CMS (Admin)
         if clean_path == '/api/assets':
             if not self.check_authorization() or not self.check_admin_authorization():
                 self.send_json(401, {"status": "unauthorized", "message": "Acesso administrativo necessário."})
@@ -286,7 +458,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             })
             return
 
-        # 6. Proteção por Token nas APIs e Modelos 3D (.glb)
+        # 7. Proteção por Token nas APIs e Modelos 3D (.glb)
         if clean_path in ('/api/config', '/api/telemetry') or lower_path.endswith('.glb'):
             if not self.check_authorization():
                 self.send_json(403, {
@@ -304,28 +476,25 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 })
                 return
 
-            if os.path.exists(JSON_PATH):
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                with open(JSON_PATH, 'rb') as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_json(404, {"status": "error", "message": "Arquivo data.json não encontrado."})
+            with config_file_lock:
+                if not os.path.exists(JSON_PATH) and not os.path.exists(f"{JSON_PATH}.bak"):
+                    self.send_json(404, {"status": "error", "message": "Arquivo data.json não encontrado."})
+                    return
+                config_data = read_json_resilient(JSON_PATH, lambda: {"version": "1.0.0", "items": []})
+
+            self.send_json(200, config_data)
             return
 
         if clean_path == '/api/telemetry':
-            if os.path.exists(TELEMETRY_PATH):
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                with open(TELEMETRY_PATH, 'rb') as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_json(200, {"totalSessions": 0, "targetViews": {}, "logs": []})
+            with telemetry_file_lock:
+                telemetry_data = read_json_resilient(
+                    TELEMETRY_PATH,
+                    lambda: {"totalSessions": 0, "targetViews": {}, "logs": []}
+                )
+            self.send_json(200, telemetry_data)
             return
 
-        # 7. Entrega de Arquivos Estáticos Públicos
+        # 8. Entrega de Arquivos Estáticos Públicos
         return super().do_GET()
 
     def do_POST(self):
@@ -369,6 +538,18 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 })
                 return
 
+            # Verifica espaço livre em disco antes de gravar
+            try:
+                free_bytes = shutil.disk_usage(BASE_DIR).free
+                if free_bytes < (content_length + MIN_FREE_DISK_BYTES):
+                    self.send_json(507, {
+                        "status": "error",
+                        "message": "Espaço insuficiente em disco no servidor para armazenar o ativo."
+                    })
+                    return
+            except Exception:
+                pass
+
             expected_ext = '.glb' if upload_type == 'model' else '.mind'
             safe_name = slugify_filename(raw_filename, expected_ext)
             if not safe_name:
@@ -398,6 +579,8 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                     tmp_path = f"{dest_path}.tmp"
                     with open(tmp_path, 'wb') as f:
                         f.write(file_bytes)
+                        f.flush()
+                        os.fsync(f.fileno())
                     os.replace(tmp_path, dest_path)
 
                 print(f" [CMS Upload] Ativo salvo: {final_name} ({len(file_bytes)} bytes)")
@@ -415,7 +598,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         post_data = self.rfile.read(content_length) if content_length > 0 else b''
 
         # ----------------------------------------------------------------------
-        # Validação do PIN Administrativo (com limite de tentativas)
+        # Validação do PIN Administrativo (com limite de tentativas por IP)
         # ----------------------------------------------------------------------
         if clean_path == '/api/admin/verify-pin':
             client_ip = self.client_address[0]
@@ -471,26 +654,17 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             return
 
         # ----------------------------------------------------------------------
-        # Telemetria dos Visitantes (exige apenas X-App-Token)
+        # Telemetria dos Visitantes (gravação atômica + backup)
         # ----------------------------------------------------------------------
         if clean_path == '/api/telemetry':
             try:
                 event_data = json.loads(post_data.decode('utf-8'))
-                os.makedirs(os.path.dirname(TELEMETRY_PATH), exist_ok=True)
 
                 with telemetry_file_lock:
-                    telemetry_store = {
-                        "totalSessions": 0,
-                        "targetViews": {},
-                        "logs": []
-                    }
-
-                    if os.path.exists(TELEMETRY_PATH):
-                        try:
-                            with open(TELEMETRY_PATH, 'r', encoding='utf-8') as f:
-                                telemetry_store = json.load(f)
-                        except Exception:
-                            pass
+                    telemetry_store = read_json_resilient(
+                        TELEMETRY_PATH,
+                        lambda: {"totalSessions": 0, "targetViews": {}, "logs": []}
+                    )
 
                     event_type = event_data.get("event")
 
@@ -503,12 +677,10 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                         telemetry_store["targetViews"] = views
 
                     telemetry_store["logs"].append(event_data)
-
                     if len(telemetry_store["logs"]) > 500:
                         telemetry_store["logs"] = telemetry_store["logs"][-500:]
 
-                    with open(TELEMETRY_PATH, 'w', encoding='utf-8') as f:
-                        json.dump(telemetry_store, f, indent=2, ensure_ascii=False)
+                    write_json_atomic(TELEMETRY_PATH, telemetry_store)
 
                 self.send_json(200, {"status": "recorded"})
             except Exception as e:
@@ -529,9 +701,8 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         if clean_path == '/api/config':
             try:
                 parsed_json = json.loads(post_data.decode('utf-8'))
-                os.makedirs(os.path.dirname(JSON_PATH), exist_ok=True)
-                with open(JSON_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+                with config_file_lock:
+                    write_json_atomic(JSON_PATH, parsed_json)
 
                 self.send_json(200, {"status": "success", "message": "Configuração salva!"})
             except Exception as e:
@@ -563,8 +734,8 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         self.send_json(404, {"status": "error", "message": "Endpoint não encontrado."})
 
 
-def open_presenter_panel(protocol):
-    url = f"{protocol}://localhost:{PORT}/frontend/cms/qrcode.html"
+def open_presenter_panel(protocol, port):
+    url = f"{protocol}://localhost:{port}/frontend/cms/qrcode.html"
     try:
         webbrowser.open(url)
     except Exception:
@@ -572,32 +743,32 @@ def open_presenter_panel(protocol):
 
 
 if __name__ == '__main__':
-    ThreadingHTTPServer.allow_reuse_address = True
-    server_address = ('', PORT)
-
     try:
-        httpd = ThreadingHTTPServer(server_address, CMSRequestHandler)
-        httpd_instance = httpd
-    except OSError:
-        print(f" [AVISO] A porta {PORT} já está em uso (o servidor provavelmente já está ativo).")
+        httpd, bound_port, existing_scheme = bind_available_port(CMSRequestHandler)
+    except RuntimeError as err:
+        print(f" [ERRO CRÍTICO] {err}")
         sys.exit(1)
 
-    cert_file = os.path.join(BASE_DIR, 'cert.pem')
-    key_file = os.path.join(BASE_DIR, 'key.pem')
+    ACTIVE_PORT = bound_port
 
-    if os.path.exists(cert_file) and os.path.exists(key_file):
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
-        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
-        protocol = "https"
-        print(f" Servidor HTTPS WebAR-CMS ativo na porta {PORT}...")
+    # Se outra instância do próprio WebAR-CMS já estiver rodando, apenas abre o painel e sai
+    if httpd is None and existing_scheme:
+        print(f" [INFO] Servidor WebAR-CMS já está ativo na porta {ACTIVE_PORT}. Abrindo painel...")
+        open_presenter_panel(existing_scheme, ACTIVE_PORT)
+        sys.exit(0)
+
+    httpd_instance = httpd
+    ACTIVE_PROTOCOL = configure_ssl_with_recovery(httpd)
+
+    local_ip = get_local_ip()
+    print(f" Servidor {ACTIVE_PROTOCOL.upper()} WebAR-CMS ativo na porta {ACTIVE_PORT}...")
+    if local_ip == '127.0.0.1':
+        print(" [AVISO] Nenhuma rede Wi-Fi/Ethernet ativa detectada (IP 127.0.0.1). Conecte-se ao Wi-Fi do evento.")
     else:
-        protocol = "http"
-        print(f" Certificados SSL não encontrados. Servidor rodando em HTTP (Porta {PORT})...")
+        print(f" IP Local detectado: {local_ip}")
+    print(f" Painel QR Code: {ACTIVE_PROTOCOL}://localhost:{ACTIVE_PORT}/cms")
 
-    print(f" Painel QR Code: {protocol}://localhost:{PORT}/cms")
-
-    timer = threading.Timer(1.2, open_presenter_panel, args=[protocol])
+    timer = threading.Timer(1.2, open_presenter_panel, args=[ACTIVE_PROTOCOL, ACTIVE_PORT])
     timer.daemon = True
     timer.start()
 

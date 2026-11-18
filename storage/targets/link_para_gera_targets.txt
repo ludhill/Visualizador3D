@@ -1,1 +1,66 @@
 https://hiukim.github.io/mind-ar-js-doc/tools/compile/
+
+
+
+### Windows (PowerShell como Administrador)
+
+Abra o **Terminal (Admin)** ou **PowerShell (Admin)** no PC Host e execute os três comandos abaixo:
+
+```powershell
+# 1. Garante que a rede conectada esteja como "Privada" (obrigatório para liberar tráfego local)
+Set-NetConnectionProfile -NetworkCategory Private
+
+# 2. Libera o tráfego HTTPS/HTTP de entrada na porta 8080 (ou inclua as portas de fallback: 8080,8443,8081,8888)
+New-NetFirewallRule -DisplayName "WebAR Direct 8080" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8080
+
+# 3. Libera respostas de PING (ICMPv4) para diagnósticos de rede a partir do celular
+New-NetFirewallRule -DisplayName "Liberar PING ICMPv4" -Direction Inbound -Action Allow -Protocol ICMPv4
+
+```
+
+* **Alternativa restrita (opcional — vinculada apenas ao `python.exe` e à sub-rede local):**
+*(Atenção: se alternar entre Python global, Venv ou Anaconda no VS Code, o caminho do executável muda e a regra abaixo passa a bloquear; nesse caso, prefira a regra `WebAR Direct 8080` acima).*
+
+```powershell
+$pythonExe = (Get-Command python).Source
+
+New-NetFirewallRule -DisplayName "WebAR Server (Exclusivo Python)" `
+                    -Direction Inbound `
+                    -Action Allow `
+                    -Protocol TCP `
+                    -LocalPort 8080 `
+                    -Program $pythonExe `
+                    -RemoteAddress "192.168.0.0/24" `
+                    -Profile Private
+
+```
+
+* **Comandos rápidos de verificação ou limpeza (Windows):**
+
+```powershell
+# Conferir perfil de rede e regras ativas do WebAR
+Get-NetConnectionProfile
+Get-NetFirewallRule -DisplayName "*WebAR*"
+
+# Remover regras antigas, se precisar recriar
+Remove-NetFirewallRule -DisplayName "WebAR Direct 8080" -ErrorAction SilentlyContinue
+
+```
+
+---
+
+### Linux (Debian / Ubuntu — UFW)
+
+```bash
+# Libera a porta 8080 TCP (o PING/ICMP já vem liberado por padrão no UFW)
+sudo ufw allow 8080/tcp
+sudo ufw reload
+
+```
+
+---
+
+### macOS
+
+1. Acesse **Ajustes do Sistema > Rede > Firewall**.
+2. Clique em **Opções** e defina o executável do **Python** como **"Permitir conexões de entrada"**.

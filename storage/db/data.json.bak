@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "items": [
+    {
+      "id": "item-1",
+      "name": "Foguete 1",
+      "targetIndex": 0,
+      "modelFile": "modelo_1.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-2",
+      "name": "Foguete 2",
+      "targetIndex": 1,
+      "modelFile": "modelo_2.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-3",
+      "name": "Foguete 3",
+      "targetIndex": 2,
+      "modelFile": "modelo_3.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-4",
+      "name": "Foguete 4",
+      "targetIndex": 3,
+      "modelFile": "modelo_4.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-5",
+      "name": "Foguete 5",
+      "targetIndex": 4,
+      "modelFile": "modelo_5.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-6",
+      "name": "Foguete 6",
+      "targetIndex": 5,
+      "modelFile": "modelo_6.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-7",
+      "name": "Foguete 7",
+      "targetIndex": 6,
+      "modelFile": "modelo_7.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-8",
+      "name": "Foguete 8",
+      "targetIndex": 7,
+      "modelFile": "modelo_8.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-9",
+      "name": "Modelo Legado 9",
+      "targetIndex": 8,
+      "modelFile": "modelo_9.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    },
+    {
+      "id": "item-10",
+      "name": "mars",
+      "targetIndex": 9,
+      "modelFile": "mars.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
+    }
+  ]
+}

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>WebAR Experience</title>
-  
+  <title>WebAR Experience — CVT Espacial</title>
+
   <script src="vendor/aframe.min.js"></script>
   <script src="vendor/mindar-image-aframe.prod.js"></script>
 
@@ -12,9 +12,9 @@
     html, body {
       margin: 0; padding: 0; width: 100%; height: 100%;
       overflow: hidden; position: fixed; background-color: #000;
-      font-family: sans-serif;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     }
-    
+
     a-scene {
       width: 100vw; height: 100vh; position: absolute; top: 0; left: 0;
     }
@@ -22,24 +22,142 @@
     /* Interface de Acesso Negado */
     .denied-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: #0f172a; color: #f8fafc; display: none;
+      background: #0f172a; color: #f87171; display: none;
       flex-direction: column; align-items: center; justify-content: center;
-      z-index: 10000; text-align: center; padding: 20px; box-sizing: border-box;
+      z-index: 10000; text-align: center; padding: 24px; box-sizing: border-box;
     }
-    .denied-overlay h1 { font-size: 1.5rem; margin-bottom: 12px; color: #f87171; }
-    .denied-overlay p { color: #94a3b8; max-width: 320px; font-size: 0.95rem; line-height: 1.5; }
+    .denied-overlay h1 { font-size: 22px; margin-bottom: 10px; }
+    .denied-overlay p { color: #cbd5e1; max-width: 320px; font-size: 14px; line-height: 1.5; }
 
     /* Modal de Economia de Bateria */
     .modal-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(15, 23, 42, 0.9); color: white;
+      background: rgba(15, 23, 42, 0.88); color: #f8fafc;
       display: none; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 9999; text-align: center; padding: 20px;
+      z-index: 9999; text-align: center; padding: 24px; box-sizing: border-box;
+      backdrop-filter: blur(6px);
     }
     .modal-overlay button {
-      padding: 12px 24px; font-size: 16px; background: #0284c7; color: white;
-      border: none; border-radius: 8px; cursor: pointer; margin-top: 15px;
-      font-weight: bold;
+      padding: 12px 24px; font-size: 16px; font-weight: 600;
+      background: #0284c7; color: #fff; border: none; border-radius: 10px;
+      cursor: pointer; margin-top: 16px;
+    }
+
+    /* Dica discreta enquanto os 4 Ls procuram um marcador */
+    .scan-hint {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.78); color: #f1f5f9;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 10px 18px; border-radius: 999px;
+      font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+      z-index: 9000; pointer-events: none; text-align: center;
+      white-space: nowrap; backdrop-filter: blur(6px);
+      transition: opacity 0.25s ease;
+    }
+    .scan-hint.hidden { opacity: 0; }
+
+    /* HUD de Carregamento do Modelo 3D (0% -> 100%) */
+    .loader-hud {
+      position: fixed; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+      z-index: 9500; padding: 20px; box-sizing: border-box;
+      pointer-events: none;
+    }
+    .loader-hud.visible { display: flex; }
+
+    .loader-card {
+      --stage-color: #ef4444;
+      width: 100%; max-width: 310px;
+      background: rgba(15, 23, 42, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 20px; padding: 22px 20px;
+      text-align: center; color: #f8fafc;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.65);
+    }
+
+    /* Círculo de Progresso + Ícone de Arquivo 3D sendo preenchido */
+    .ring-wrapper {
+      position: relative; width: 104px; height: 104px;
+      margin: 0 auto 14px auto;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .progress-ring {
+      transform: rotate(-90deg);
+      width: 104px; height: 104px;
+    }
+    .progress-ring-bg {
+      fill: none; stroke: rgba(148, 163, 184, 0.2); stroke-width: 7;
+    }
+    .progress-ring-fill {
+      fill: none; stroke: var(--stage-color); stroke-width: 7;
+      stroke-linecap: round;
+      stroke-dasharray: 276.46; /* 2 * PI * 44 */
+      stroke-dashoffset: 276.46;
+      transition: stroke-dashoffset 0.18s ease, stroke 0.3s ease;
+    }
+
+    .file-icon-box {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .file-badge {
+      position: relative; width: 38px; height: 46px;
+      border: 2px solid var(--stage-color);
+      border-radius: 6px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(30, 41, 59, 0.8);
+      transition: border-color 0.3s ease;
+    }
+    .file-liquid {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 0%;
+      background: var(--stage-color);
+      opacity: 0.35;
+      transition: height 0.18s ease, background-color 0.3s ease;
+    }
+    .file-ext {
+      position: relative; z-index: 1;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.05em;
+      color: #ffffff;
+    }
+
+    .loader-title {
+      font-size: 16px; font-weight: 700; margin: 0 0 4px 0;
+      color: #f8fafc;
+    }
+    .loader-status {
+      font-size: 12.5px; color: #cbd5e1; margin: 0 0 12px 0;
+    }
+
+    /* Barra Linear Complementar */
+    .linear-track {
+      width: 100%; height: 10px;
+      background: rgba(30, 41, 59, 0.95);
+      border-radius: 999px; overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      margin-bottom: 10px;
+    }
+    .linear-fill {
+      height: 100%; width: 0%;
+      background: var(--stage-color);
+      border-radius: 999px;
+      transition: width 0.18s ease, background-color 0.3s ease;
+    }
+
+    .loader-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; font-weight: 700;
+    }
+    .loader-percent {
+      color: var(--stage-color);
+      font-size: 15px;
+      transition: color 0.3s ease;
+    }
+    .loader-bytes {
+      color: #94a3b8;
+      font-family: monospace;
     }
   </style>
 </head>
@@ -58,34 +176,52 @@
     <button id="btn-reconnect">Toque para Reativar Câmera</button>
   </div>
 
-  <!-- autoStart: false impede que a câmera ligue antes de autenticar -->
-  <a-scene 
-    mindar-image="imageTargetSrc: /storage/targets/targets.mind; autoStart: false; uiLoading: no;" 
-    color-space="sRGB" 
-    renderer="colorManagement: true, physicallyCorrectLights: true" 
-    vr-mode-ui="enabled: false" 
+  <!-- Orientação durante busca pelos 4 Ls -->
+  <div id="scan-hint" class="scan-hint">Aponte a câmera para a imagem de um foguete</div>
+
+  <!-- HUD de Progresso de Download do Modelo 3D -->
+  <div id="loader-hud" class="loader-hud" role="status" aria-live="polite">
+    <div class="loader-card" id="loader-card">
+      <div class="ring-wrapper">
+        <svg class="progress-ring" viewBox="0 0 104 104">
+          <circle class="progress-ring-bg" cx="52" cy="52" r="44"></circle>
+          <circle class="progress-ring-fill" id="progress-ring-fill" cx="52" cy="52" r="44"></circle>
+        </svg>
+        <div class="file-icon-box">
+          <div class="file-badge">
+            <div class="file-liquid" id="file-liquid"></div>
+            <span class="file-ext">.GLB</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="loader-title" id="loader-title">Carregando Foguete...</h3>
+      <p class="loader-status" id="loader-status">Iniciando transferência...</p>
+
+      <div class="linear-track">
+        <div class="linear-fill" id="linear-fill"></div>
+      </div>
+
+      <div class="loader-meta">
+        <span class="loader-percent" id="loader-percent">0%</span>
+        <span class="loader-bytes" id="loader-bytes">0.0 MB</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cena A-Frame com MindAR -->
+  <a-scene
+    mindar-image="imageTargetSrc: /storage/targets/targets.mind?v=2; autoStart: false; uiLoading: no;"
+    color-space="sRGB"
+    renderer="colorManagement: true, physicallyCorrectLights: true"
+    vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false">
-    
+
     <a-light type="ambient" intensity="1.5"></a-light>
     <a-light type="directional" position="1 2 1" intensity="1.2"></a-light>
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
   </a-scene>
-
-  <!-- Service Worker (Registro com fallback gracioso) -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((reg) => {
-            console.log('[Service Worker] Registrado com sucesso no escopo:', reg.scope);
-          })
-          .catch((err) => {
-            console.warn('[Service Worker] Registro ignorado em ambiente local/HTTP:', err.message);
-          });
-      });
-    }
-  </script>
 
   <script type="module" src="js/App.js"></script>
 </body>

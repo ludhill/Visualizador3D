@@ -81,6 +81,15 @@
       "scale": "0.25 0.25 0.25",
       "rotation": "0 0 0",
       "active": true
+    },
+    {
+      "id": "item-10",
+      "name": "mars",
+      "targetIndex": 9,
+      "modelFile": "mars.glb",
+      "scale": "0.25 0.25 0.25",
+      "rotation": "0 0 0",
+      "active": true
     }
   ]
 }
