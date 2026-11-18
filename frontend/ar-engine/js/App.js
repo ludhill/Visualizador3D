@@ -2,6 +2,48 @@ import { SessionManager } from './SessionManager.js';
 import { GestureController } from './GestureController.js';
 import { TelemetryTracker } from './TelemetryTracker.js';
 
+// Componente nativo para executar animações embutidas em arquivos .glb (glTF 2.0)
+if (window.AFRAME && !AFRAME.components['glb-animator']) {
+  AFRAME.registerComponent('glb-animator', {
+    schema: {
+      playing: { type: 'boolean', default: true },
+      speed: { type: 'number', default: 1.0 }
+    },
+
+    init() {
+      this.mixer = null;
+
+      const setupAnimations = (model) => {
+        if (this.mixer || !model) return;
+        const clips = model.animations || [];
+        if (clips.length === 0) return;
+
+        this.mixer = new THREE.AnimationMixer(model);
+        clips.forEach((clip) => {
+          const action = this.mixer.clipAction(clip);
+          action.setLoop(THREE.LoopRepeat);
+          action.play();
+        });
+      };
+
+      this.el.addEventListener('model-loaded', (e) => {
+        setupAnimations(e.detail.model);
+      });
+
+      const existingMesh = this.el.getObject3D('mesh');
+      if (existingMesh) {
+        setupAnimations(existingMesh);
+      }
+    },
+
+    tick(time, timeDelta) {
+      if (this.mixer && this.data.playing) {
+        this.mixer.update((timeDelta / 1000) * this.data.speed);
+      }
+    }
+  });
+}
+
 const urlParams = new URLSearchParams(window.location.search);
 const token = (urlParams.get('token') || urlParams.get('Token') || '').trim();
 let telemetry = null;
@@ -257,11 +299,11 @@ function setupARScene(items, modal, btnReconectar) {
 
       if (loadState === 'ready') {
         if (gestureCtrl) gestureCtrl.setActive(true);
+        if (modelEntity) modelEntity.setAttribute('glb-animator', 'playing: true');
         return;
       }
 
       if (loadState === 'loading') {
-        // Usuário apontou de volta enquanto o download ainda está em andamento
         const hud = document.getElementById('loader-hud');
         if (hud) hud.classList.add('visible');
         return;
@@ -278,6 +320,7 @@ function setupARScene(items, modal, btnReconectar) {
         modelEntity.setAttribute('gltf-model', blobUrl);
         modelEntity.setAttribute('scale', item.scale || '0.25 0.25 0.25');
         modelEntity.setAttribute('rotation', item.rotation || '0 0 0');
+        modelEntity.setAttribute('glb-animator', 'playing: true; speed: 1');
 
         modelEntity.addEventListener('model-loaded', () => {
           loadState = 'ready';
@@ -285,14 +328,14 @@ function setupARScene(items, modal, btnReconectar) {
           gestureCtrl.setActive(isTargetVisible);
 
           updateLoaderHUD({
-            visible: isTargetVisible,
+            visible: true,
             title: displayName,
             percent: 100
           });
 
           setTimeout(() => {
             updateLoaderHUD({ visible: false });
-          }, 450);
+          }, 400);
         }, { once: true });
 
         modelEntity.addEventListener('model-error', () => {
@@ -325,8 +368,8 @@ function setupARScene(items, modal, btnReconectar) {
       activeTargetsCount = Math.max(0, activeTargetsCount - 1);
 
       if (gestureCtrl) gestureCtrl.setActive(false);
+      if (modelEntity) modelEntity.setAttribute('glb-animator', 'playing: false');
 
-      // Oculta o HUD se o visitante tirar a câmera do marcador durante o download
       if (loadState === 'loading') {
         updateLoaderHUD({ visible: false });
       }
