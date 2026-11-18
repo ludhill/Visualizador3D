@@ -64,3 +64,10 @@ sudo ufw reload
 
 1. Acesse **Ajustes do Sistema > Rede > Firewall**.
 2. Clique em **Opções** e defina o executável do **Python** como **"Permitir conexões de entrada"**.
+
+
+1. O notebook novo subiu em http:// em vez de https:// (Mais Provável)Como os arquivos cert.pem e key.pem ficam no .gitignore, eles não vieram no git pull para o notebook novo. Se o openssl não estiver no PATH do Windows, o server.py caiu para HTTP, e o Chrome bloqueia a câmera em qualquer conexão http:// via IP.   Como conferir: Olhe no terminal do notebook ou na URL abaixo do QR Code se aparece http:// em vez de https://.Como resolver (no notebook novo):Abra o Git Bash (ou PowerShell) na raiz Visualizador3D/ e gere o certificado:Bash# No Git Bash:
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "//CN=cvtespacial.local"
+PowerShell# Ou no PowerShell (usando o OpenSSL do Git):
+& "C:\Program Files\Git\usr\bin\openssl.exe" req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=cvtespacial.local"
+Reinicie o servidor (python server.py) e confirme no terminal a mensagem Servidor HTTPS WebAR-CMS ativo.Escaneie o novo QR Code (https://...) e aceite o aviso "Avançado $\rightarrow$ Continuar para <IP> (não seguro)".   
