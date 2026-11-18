@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+import hmac
 import json
 import ssl
 import socket
@@ -13,10 +15,15 @@ telemetry_file_lock = threading.Lock()
 SERVER_PAUSED = False
 httpd_instance = None
 
+# Controle de tentativas de PIN por IP: { ip: {"fails": int, "locked_until": float} }
+admin_attempts = {}
+admin_lock = threading.Lock()
+
 # ==============================================================================
 # CONFIGURAÇÕES GERAIS E SEGURANÇA
 # ==============================================================================
 API_TOKEN = "WEBAR_2026"
+ADMIN_PIN = "2026"
 PORT = 8080
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
@@ -55,7 +62,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
 
     def check_authorization(self):
         """
-        Valida o token no cabeçalho HTTP ('X-App-Token') ou na URL (?token=...).
+        Valida o token de visitante no cabeçalho ('X-App-Token') ou na URL (?token=...).
         """
         client_token = self.headers.get('X-App-Token')
 
@@ -68,6 +75,15 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 client_token = None
 
         return client_token == API_TOKEN
+
+    def check_admin_authorization(self):
+        """
+        Valida o PIN administrativo enviado no cabeçalho 'X-Admin-Pin'.
+        """
+        client_pin = (self.headers.get('X-Admin-Pin') or '').strip()
+        if not client_pin:
+            return False
+        return hmac.compare_digest(client_pin, ADMIN_PIN)
 
     def list_directory(self, path):
         """
@@ -246,20 +262,55 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 return
 
         content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
+        post_data = self.rfile.read(content_length) if content_length > 0 else b''
 
-        if clean_path == '/api/config':
+        # ----------------------------------------------------------------------
+        # Validação do PIN Administrativo (com limite de tentativas)
+        # ----------------------------------------------------------------------
+        if clean_path == '/api/admin/verify-pin':
+            client_ip = self.client_address[0]
+            now = time.time()
+
+            with admin_lock:
+                record = admin_attempts.get(client_ip, {"fails": 0, "locked_until": 0})
+                if record["locked_until"] > now:
+                    wait_sec = int(record["locked_until"] - now) + 1
+                    self.send_json(429, {
+                        "status": "locked",
+                        "message": f"Muitas tentativas incorretas. Aguarde {wait_sec}s."
+                    })
+                    return
+
             try:
-                parsed_json = json.loads(post_data.decode('utf-8'))
-                os.makedirs(os.path.dirname(JSON_PATH), exist_ok=True)
-                with open(JSON_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+                body = json.loads(post_data.decode('utf-8')) if post_data else {}
+                submitted_pin = str(body.get("pin", "")).strip()
+            except Exception:
+                submitted_pin = ""
 
-                self.send_json(200, {"status": "success", "message": "Configuração salva!"})
-            except Exception as e:
-                self.send_json(500, {"status": "error", "message": str(e)})
+            if submitted_pin and hmac.compare_digest(submitted_pin, ADMIN_PIN):
+                with admin_lock:
+                    admin_attempts.pop(client_ip, None)
+                self.send_json(200, {
+                    "status": "authorized",
+                    "message": "Painel administrativo desbloqueado."
+                })
+            else:
+                with admin_lock:
+                    record["fails"] = record.get("fails", 0) + 1
+                    if record["fails"] >= 5:
+                        record["locked_until"] = now + 30
+                        record["fails"] = 0
+                    admin_attempts[client_ip] = record
+
+                self.send_json(401, {
+                    "status": "unauthorized",
+                    "message": "PIN administrativo incorreto."
+                })
             return
 
+        # ----------------------------------------------------------------------
+        # Telemetria dos Visitantes (exige apenas X-App-Token)
+        # ----------------------------------------------------------------------
         if clean_path == '/api/telemetry':
             try:
                 event_data = json.loads(post_data.decode('utf-8'))
@@ -298,6 +349,29 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                         json.dump(telemetry_store, f, indent=2, ensure_ascii=False)
 
                 self.send_json(200, {"status": "recorded"})
+            except Exception as e:
+                self.send_json(500, {"status": "error", "message": str(e)})
+            return
+
+        # ----------------------------------------------------------------------
+        # Rotas Administrativas Protegidas por X-Admin-Pin
+        # ----------------------------------------------------------------------
+        if clean_path in ('/api/config', '/api/toggle-pause', '/api/shutdown'):
+            if not self.check_admin_authorization():
+                self.send_json(401, {
+                    "status": "unauthorized",
+                    "message": "Ação bloqueada: PIN administrativo ausente ou expirado."
+                })
+                return
+
+        if clean_path == '/api/config':
+            try:
+                parsed_json = json.loads(post_data.decode('utf-8'))
+                os.makedirs(os.path.dirname(JSON_PATH), exist_ok=True)
+                with open(JSON_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+
+                self.send_json(200, {"status": "success", "message": "Configuração salva!"})
             except Exception as e:
                 self.send_json(500, {"status": "error", "message": str(e)})
             return

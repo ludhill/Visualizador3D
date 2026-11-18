@@ -6,7 +6,33 @@
   <title>Dashboard CMS & Analytics — WebAR Exposição</title>
   <link rel="stylesheet" href="css/dashboard.css">
 </head>
-<body>
+<body class="cms-locked">
+
+  <!-- Modal de Autenticação Administrativa & Validador Humano -->
+  <div id="admin-lock-modal" class="auth-overlay no-print" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <form id="admin-auth-form" class="auth-card">
+      <div class="auth-badge">ACESSO RESTRITO — APRESENTADOR</div>
+      <h2 id="auth-title">Painel Administrativo CMS</h2>
+      <p class="auth-desc">Resolva a verificação humana e informe o PIN para gerenciar os modelos 3D e o servidor.</p>
+
+      <div class="auth-field">
+        <label for="captcha-input" id="captcha-label">Verificação Humana: quanto é 0 + 0?</label>
+        <input type="number" id="captcha-input" required placeholder="Digite o resultado" autocomplete="off">
+      </div>
+
+      <div class="auth-field">
+        <label for="admin-pin-input">PIN Administrativo</label>
+        <input type="password" id="admin-pin-input" inputmode="numeric" required placeholder="••••" autocomplete="current-password">
+      </div>
+
+      <p id="auth-error-msg" class="auth-error" aria-live="polite"></p>
+
+      <div class="auth-actions">
+        <a href="/frontend/cms/qrcode.html" class="btn-secondary-link">Voltar ao QR Code</a>
+        <button type="submit" id="btn-unlock-cms" class="btn-primary">Desbloquear Painel</button>
+      </div>
+    </form>
+  </div>
 
   <header class="topbar no-print">
     <div class="topbar-left">
@@ -19,14 +45,15 @@
     </div>
 
     <div class="topbar-actions">
-        <button type="button" id="btn-toggle-pause" class="btn-warning">Pausar AR</button>
-        <button type="button" id="btn-shutdown" class="btn-danger">Encerrar Servidor</button>   
-        <button type="button" id="btn-font-dec" title="Diminuir fonte">A-</button>
-        <button type="button" id="btn-font-inc" title="Aumentar fonte">A+</button>
-        <button type="button" id="btn-theme" title="Alternar tema Claro/Escuro">Tema</button>
-        <button type="button" id="btn-refresh">Atualizar</button>
-        <button type="button" id="btn-export-csv">Exportar CSV</button>
-        <button type="button" id="btn-print" class="btn-primary">Imprimir A4</button>
+      <button type="button" id="btn-font-dec" title="Diminuir fonte">A-</button>
+      <button type="button" id="btn-font-inc" title="Aumentar fonte">A+</button>
+      <button type="button" id="btn-theme" title="Alternar tema Claro/Escuro">Tema</button>
+      <button type="button" id="btn-refresh">Atualizar</button>
+      <button type="button" id="btn-export-csv">Exportar CSV</button>
+      <button type="button" id="btn-print" class="btn-primary">Imprimir A4</button>
+      <button type="button" id="btn-toggle-pause" class="btn-warning">Pausar AR</button>
+      <button type="button" id="btn-lock-cms" title="Trancar painel com PIN">Bloquear</button>
+      <button type="button" id="btn-shutdown" class="btn-danger">Encerrar Servidor</button>
     </div>
   </header>
 

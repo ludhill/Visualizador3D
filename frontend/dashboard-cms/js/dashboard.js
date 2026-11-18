@@ -1,4 +1,7 @@
 let apiToken = '';
+let adminPin = sessionStorage.getItem('webar_admin_pin') || '';
+let captchaExpected = 0;
+
 let cmsData = { version: '1.0.0', items: [] };
 let analyticsData = {
   totalSessions: 0,
@@ -9,9 +12,84 @@ let analyticsData = {
 let fontSizePx = 16;
 
 document.addEventListener('DOMContentLoaded', async () => {
+  generateHumanChallenge();
+  bindAuthEvents();
   bindToolbarEvents();
   await initDashboard();
 });
+
+function generateHumanChallenge() {
+  const a = Math.floor(Math.random() * 9) + 2; // 2 a 10
+  const b = Math.floor(Math.random() * 9) + 1; // 1 a 9
+  captchaExpected = a + b;
+
+  const label = document.getElementById('captcha-label');
+  const input = document.getElementById('captcha-input');
+  if (label) label.innerText = `Verificação Humana: quanto é ${a} + ${b}?`;
+  if (input) input.value = '';
+}
+
+function lockDashboard(message = '') {
+  adminPin = '';
+  sessionStorage.removeItem('webar_admin_pin');
+  document.body.classList.add('cms-locked');
+
+  const pinInput = document.getElementById('admin-pin-input');
+  const errorEl = document.getElementById('auth-error-msg');
+  if (pinInput) pinInput.value = '';
+  if (errorEl) errorEl.innerText = message;
+
+  generateHumanChallenge();
+}
+
+function unlockDashboard(verifiedPin) {
+  adminPin = verifiedPin;
+  sessionStorage.setItem('webar_admin_pin', verifiedPin);
+  document.body.classList.remove('cms-locked');
+
+  const errorEl = document.getElementById('auth-error-msg');
+  if (errorEl) errorEl.innerText = '';
+}
+
+function bindAuthEvents() {
+  const form = document.getElementById('admin-auth-form');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('auth-error-msg');
+    const captchaVal = Number(document.getElementById('captcha-input').value);
+    const pinVal = document.getElementById('admin-pin-input').value.trim();
+
+    if (captchaVal !== captchaExpected) {
+      errorEl.innerText = 'Resposta da verificação humana incorreta.';
+      generateHumanChallenge();
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/verify-pin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-App-Token': apiToken
+        },
+        body: JSON.stringify({ pin: pinVal })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === 'authorized') {
+        unlockDashboard(pinVal);
+        await initDashboard();
+      } else {
+        errorEl.innerText = data.message || 'PIN administrativo incorreto.';
+        generateHumanChallenge();
+      }
+    } catch (err) {
+      errorEl.innerText = 'Erro de comunicação com o servidor.';
+    }
+  });
+}
 
 function bindToolbarEvents() {
   document.getElementById('btn-theme').addEventListener('click', () => {
@@ -38,14 +116,30 @@ function bindToolbarEvents() {
   });
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
 
+  const lockBtn = document.getElementById('btn-lock-cms');
+  if (lockBtn) {
+    lockBtn.addEventListener('click', () => {
+      lockDashboard('Painel bloqueado manualmente.');
+    });
+  }
+
   const pauseBtn = document.getElementById('btn-toggle-pause');
   if (pauseBtn) {
     pauseBtn.addEventListener('click', async () => {
       try {
         const res = await fetch('/api/toggle-pause', {
           method: 'POST',
-          headers: { 'X-App-Token': apiToken }
+          headers: {
+            'X-App-Token': apiToken,
+            'X-Admin-Pin': adminPin
+          }
         });
+
+        if (res.status === 401) {
+          lockDashboard('Sessão expirada. Informe o PIN novamente.');
+          return;
+        }
+
         const data = await res.json();
         pauseBtn.innerText = data.paused ? 'Retomar AR' : 'Pausar AR';
         alert(data.message);
@@ -64,9 +158,19 @@ function bindToolbarEvents() {
       try {
         const res = await fetch('/api/shutdown', {
           method: 'POST',
-          headers: { 'X-App-Token': apiToken }
+          headers: {
+            'X-App-Token': apiToken,
+            'X-Admin-Pin': adminPin
+          }
         });
+
+        if (res.status === 401) {
+          lockDashboard('Sessão expirada. Informe o PIN novamente.');
+          return;
+        }
+
         const data = await res.json();
+        document.body.classList.remove('cms-locked');
         document.body.innerHTML = `
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;gap:12px;padding:24px;">
             <h1 style="color:#f87171;">Servidor Encerrado</h1>
@@ -94,6 +198,28 @@ async function initDashboard() {
       if (pauseBtn) {
         pauseBtn.innerText = info.paused ? 'Retomar AR' : 'Pausar AR';
       }
+    }
+
+    // Revalida o PIN salvo na sessão ao carregar/atualizar a página
+    if (adminPin) {
+      const verifyRes = await fetch('/api/admin/verify-pin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-App-Token': apiToken
+        },
+        body: JSON.stringify({ pin: adminPin })
+      });
+
+      if (verifyRes.ok) {
+        unlockDashboard(adminPin);
+      } else {
+        lockDashboard('');
+        return;
+      }
+    } else {
+      lockDashboard('');
+      return;
     }
 
     const [analyticsRes, configRes] = await Promise.all([
@@ -237,10 +363,17 @@ async function saveConfig() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-App-Token': apiToken
+        'X-App-Token': apiToken,
+        'X-Admin-Pin': adminPin
       },
       body: JSON.stringify(cmsData)
     });
+
+    if (res.status === 401) {
+      lockDashboard('Sessão expirada. Informe o PIN novamente para salvar.');
+      return;
+    }
+
     const result = await res.json();
     alert(result.message || 'Configurações salvas!');
     renderTargetsChart();
