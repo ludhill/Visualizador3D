@@ -90,11 +90,11 @@
       </article>
     </section>
 
-    <!-- Gráficos Visuais (100% Offline, prontos para impressão A4) -->
+    <!-- Gráficos Visuais -->
     <section class="charts-grid">
       <article class="panel">
         <div class="panel-header">
-          <h2>Visualizações por Alvo (9 Modelos)</h2>
+          <h2>Visualizações por Alvo</h2>
           <span class="badge-info">Ranking em tempo real</span>
         </div>
         <div id="targets-chart" class="bar-chart-list">
@@ -111,14 +111,59 @@
       </article>
     </section>
 
-    <!-- Gestão dos 9 Modelos (CRUD no storage/db/data.json) -->
+    <!-- Upload Dinâmico de Ativos (.glb e targets.mind) -->
+    <section class="panel no-print">
+      <div class="panel-header">
+        <div>
+          <h2>Upload Dinâmico de Ativos (.GLB & .MIND)</h2>
+          <p class="panel-desc">Envie novos modelos 3D ou atualize o pacote compilado de marcadores sem acessar as pastas do servidor.</p>
+        </div>
+        <span class="badge-info" id="assets-count-badge">0 modelos no disco</span>
+      </div>
+
+      <div class="upload-grid">
+        <!-- Upload de Modelo 3D (.glb) -->
+        <div class="upload-box">
+          <h3>1. Enviar Modelo 3D (.glb)</h3>
+          <p class="upload-hint">Máximo: 25 MB. Recomendado até 5 MB para abertura instantânea no Wi-Fi.</p>
+
+          <input type="file" id="glb-file-input" accept=".glb">
+          <div id="glb-size-pill" class="size-pill">Selecione um arquivo .glb para avaliar o peso.</div>
+
+          <label class="field-label" for="glb-target-assign">Vincular automaticamente a qual alvo?</label>
+          <select id="glb-target-assign" class="cms-select">
+            <option value="">Apenas salvar na pasta storage/models</option>
+          </select>
+
+          <button type="button" id="btn-upload-glb" class="btn-primary">Enviar Modelo .GLB</button>
+          <p id="glb-upload-status" class="upload-status" aria-live="polite"></p>
+        </div>
+
+        <!-- Upload de Pacote de Marcadores (.mind) -->
+        <div class="upload-box">
+          <h3>2. Atualizar Pacote de Alvos (targets.mind)</h3>
+          <p class="upload-hint">Compile todas as imagens juntas no MindAR Compiler na ordem dos índices (0, 1, 2...).</p>
+
+          <div id="mind-current-info" class="size-pill ok">Verificando targets.mind ativo...</div>
+          <input type="file" id="mind-file-input" accept=".mind">
+
+          <button type="button" id="btn-upload-mind" class="btn-warning">Substituir targets.mind</button>
+          <p id="mind-upload-status" class="upload-status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gestão dos Alvos & Modelos (CRUD no storage/db/data.json) -->
     <section class="panel">
       <div class="panel-header">
         <div>
-          <h2>Configuração dos 9 Alvos & Modelos 3D</h2>
-          <p class="panel-desc">Altere nomes, escalas, rotações ou ative/desative alvos sem editar código.</p>
+          <h2>Configuração dos Alvos & Modelos 3D</h2>
+          <p class="panel-desc">Associe arquivos .glb aos índices do targets.mind, ajuste escalas e ative ou desative alvos.</p>
         </div>
-        <button type="button" id="btn-save-config" class="btn-success no-print">Salvar no Servidor</button>
+        <div class="header-actions no-print">
+          <button type="button" id="btn-add-target">+ Novo Alvo</button>
+          <button type="button" id="btn-save-config" class="btn-success">Salvar no Servidor</button>
+        </div>
       </div>
 
       <div class="table-wrapper">

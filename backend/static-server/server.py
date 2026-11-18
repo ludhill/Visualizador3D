@@ -1,17 +1,22 @@
 import os
+import re
 import sys
 import time
 import hmac
 import json
 import ssl
+import struct
 import socket
 import threading
+import unicodedata
 import webbrowser
+from datetime import datetime
 from urllib.parse import unquote
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-# Lock global para garantir escrita segura no ficheiro de telemetria
+# Locks globais para escrita segura em disco e controle de tentativas de PIN
 telemetry_file_lock = threading.Lock()
+upload_file_lock = threading.Lock()
 SERVER_PAUSED = False
 httpd_instance = None
 
@@ -26,9 +31,14 @@ API_TOKEN = "WEBAR_2026"
 ADMIN_PIN = "2026"
 PORT = 8080
 
+MAX_GLB_BYTES = 25 * 1024 * 1024   # 25 MB
+MAX_MIND_BYTES = 15 * 1024 * 1024  # 15 MB
+
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 JSON_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'data.json')
 TELEMETRY_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'telemetry.json')
+MODELS_DIR = os.path.join(BASE_DIR, 'storage', 'models')
+TARGETS_DIR = os.path.join(BASE_DIR, 'storage', 'targets')
 
 # Caminhos e extensões bloqueados para leitura direta via navegador
 BLOCKED_PREFIXES = ('/backend', '/storage/db', '/.git', '/.vscode')
@@ -50,6 +60,47 @@ def get_local_ip():
     return ip
 
 
+def slugify_filename(raw_name, expected_ext):
+    """
+    Remove acentos, espaços e caracteres inválidos para gerar nomes seguros em URL.
+    Ex: 'Foguete Sonda IV (Final!).glb' -> 'foguete-sonda-iv-final.glb'
+    """
+    base_name = os.path.basename(unquote(raw_name or '')).strip()
+    stem, ext = os.path.splitext(base_name)
+    if ext.lower() != expected_ext:
+        return None
+
+    normalized = unicodedata.normalize('NFKD', stem).encode('ascii', 'ignore').decode('ascii')
+    slug = re.sub(r'[^a-zA-Z0-9_-]+', '-', normalized).strip('-_').lower()
+    if not slug:
+        slug = f"ativo-{int(time.time())}"
+    return f"{slug}{expected_ext}"
+
+
+def validate_binary_asset(data, upload_type):
+    """
+    Valida os magic bytes do arquivo enviado para impedir extensões falsificadas.
+    """
+    if upload_type == 'model':
+        if len(data) < 12 or data[:4] != b'glTF':
+            return False, "Arquivo inválido: o cabeçalho binário não corresponde a um modelo .glb (glTF 2.0)."
+        version = struct.unpack('<I', data[4:8])[0]
+        if version != 2:
+            return False, f"Versão glTF não suportada ({version}). Exporte o modelo como glTF 2.0 (.glb)."
+        return True, "OK"
+
+    if upload_type == 'target':
+        if len(data) < 64:
+            return False, "Arquivo .mind vazio ou corrompido."
+        if data.startswith(b'\xff\xd8\xff') or data.startswith(b'\x89PNG'):
+            return False, "Você enviou uma imagem JPG/PNG renomeada. Compile as imagens no MindAR Compiler para gerar um .mind válido."
+        if data[:4] in (b'glTF', b'PK\x03\x04', b'%PDF') or data.lstrip()[:1] in (b'<', b'{'):
+            return False, "Arquivo inválido: o conteúdo não é um pacote compilado .mind."
+        return True, "OK"
+
+    return False, "Tipo de upload desconhecido."
+
+
 class CMSRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
@@ -61,9 +112,6 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
 
     def check_authorization(self):
-        """
-        Valida o token de visitante no cabeçalho ('X-App-Token') ou na URL (?token=...).
-        """
         client_token = self.headers.get('X-App-Token')
 
         if not client_token and '?token=' in self.path:
@@ -77,18 +125,12 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         return client_token == API_TOKEN
 
     def check_admin_authorization(self):
-        """
-        Valida o PIN administrativo enviado no cabeçalho 'X-Admin-Pin'.
-        """
         client_pin = (self.headers.get('X-Admin-Pin') or '').strip()
         if not client_pin:
             return False
         return hmac.compare_digest(client_pin, ADMIN_PIN)
 
     def list_directory(self, path):
-        """
-        Blindagem: impede a exposição da árvore de diretórios do servidor.
-        """
         self.send_json(403, {
             "status": "error",
             "message": "Acesso negado. Navegação de diretórios desativada."
@@ -104,7 +146,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         elif clean_path.endswith('sw.js'):
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         elif clean_path.endswith(('.glb', '.mind')):
-            self.send_header('Cache-Control', 'public, max-age=604800, immutable')
+            self.send_header('Cache-Control', 'public, max-age=0, must-revalidate')
         elif clean_path.endswith(('.js', '.css', '.png', '.jpg', '.jpeg', '.webp', '.svg')):
             self.send_header('Cache-Control', 'public, max-age=86400')
 
@@ -115,9 +157,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
         clean_path = unquote(raw_path).rstrip('/') or '/'
         query_string = f"?{self.path.split('?', 1)[1]}" if '?' in self.path else ''
 
-        # ----------------------------------------------------------------------
         # 1. Redirecionamentos Inteligentes de Entrada
-        # ----------------------------------------------------------------------
         if clean_path == '/':
             self.send_response(302)
             self.send_header('Location', f'/frontend/ar-engine/index.html{query_string}')
@@ -130,9 +170,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
-        # ----------------------------------------------------------------------
         # 2. Blindagem de Arquivos Internos e Diretórios Sensíveis
-        # ----------------------------------------------------------------------
         lower_path = clean_path.lower()
         if lower_path.startswith(BLOCKED_PREFIXES) or lower_path.endswith(BLOCKED_EXTENSIONS):
             self.send_json(403, {
@@ -141,9 +179,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             })
             return
 
-        # ----------------------------------------------------------------------
         # 3. Rota de Descoberta de IP e URL do QR Code
-        # ----------------------------------------------------------------------
         if clean_path == '/api/server-info':
             local_ip = get_local_ip()
             webar_url = f"https://{local_ip}:{PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
@@ -166,9 +202,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             })
             return
 
-        # ----------------------------------------------------------------------
         # 4. Rota de Analytics: Agregação Estatística
-        # ----------------------------------------------------------------------
         if clean_path == '/api/analytics':
             empty_analytics = {
                 "totalSessions": 0,
@@ -217,9 +251,42 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(200, empty_analytics)
             return
 
-        # ----------------------------------------------------------------------
-        # 5. Proteção por Token nas APIs e Modelos 3D (.glb)
-        # ----------------------------------------------------------------------
+        # 5. Inventário de Ativos (.glb e targets.mind) para o CMS (Admin)
+        if clean_path == '/api/assets':
+            if not self.check_authorization() or not self.check_admin_authorization():
+                self.send_json(401, {"status": "unauthorized", "message": "Acesso administrativo necessário."})
+                return
+
+            os.makedirs(MODELS_DIR, exist_ok=True)
+            os.makedirs(TARGETS_DIR, exist_ok=True)
+
+            models = []
+            for fname in sorted(os.listdir(MODELS_DIR)):
+                if fname.lower().endswith('.glb'):
+                    full_path = os.path.join(MODELS_DIR, fname)
+                    if os.path.isfile(full_path):
+                        models.append({
+                            "name": fname,
+                            "sizeBytes": os.path.getsize(full_path)
+                        })
+
+            mind_path = os.path.join(TARGETS_DIR, 'targets.mind')
+            target_info = {"exists": False, "sizeBytes": 0, "updatedAt": None}
+            if os.path.isfile(mind_path):
+                stat = os.stat(mind_path)
+                target_info = {
+                    "exists": True,
+                    "sizeBytes": stat.st_size,
+                    "updatedAt": datetime.fromtimestamp(stat.st_mtime).strftime('%d/%m/%Y %H:%M:%S')
+                }
+
+            self.send_json(200, {
+                "models": models,
+                "targetBundle": target_info
+            })
+            return
+
+        # 6. Proteção por Token nas APIs e Modelos 3D (.glb)
         if clean_path in ('/api/config', '/api/telemetry') or lower_path.endswith('.glb'):
             if not self.check_authorization():
                 self.send_json(403, {
@@ -258,9 +325,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(200, {"totalSessions": 0, "targetViews": {}, "logs": []})
             return
 
-        # ----------------------------------------------------------------------
-        # 6. Entrega de Arquivos Estáticos Públicos (Frontend, Vendor, Targets)
-        # ----------------------------------------------------------------------
+        # 7. Entrega de Arquivos Estáticos Públicos
         return super().do_GET()
 
     def do_POST(self):
@@ -272,6 +337,81 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 return
 
         content_length = int(self.headers.get('Content-Length', 0))
+
+        # ----------------------------------------------------------------------
+        # Upload Dinâmico de Ativos (.glb e .mind) — Protegido por X-Admin-Pin
+        # ----------------------------------------------------------------------
+        if clean_path == '/api/upload':
+            if not self.check_admin_authorization():
+                self.send_json(401, {
+                    "status": "unauthorized",
+                    "message": "Ação bloqueada: PIN administrativo ausente ou expirado."
+                })
+                return
+
+            upload_type = (self.headers.get('X-Upload-Type') or '').strip().lower()
+            raw_filename = self.headers.get('X-File-Name') or ''
+
+            if upload_type not in ('model', 'target'):
+                self.send_json(400, {"status": "error", "message": "Cabeçalho X-Upload-Type deve ser 'model' ou 'target'."})
+                return
+
+            max_bytes = MAX_GLB_BYTES if upload_type == 'model' else MAX_MIND_BYTES
+            if content_length <= 0:
+                self.send_json(400, {"status": "error", "message": "Nenhum dado binário recebido."})
+                return
+
+            if content_length > max_bytes:
+                limit_mb = max_bytes // (1024 * 1024)
+                self.send_json(413, {
+                    "status": "error",
+                    "message": f"Arquivo excede o limite máximo permitido ({limit_mb} MB)."
+                })
+                return
+
+            expected_ext = '.glb' if upload_type == 'model' else '.mind'
+            safe_name = slugify_filename(raw_filename, expected_ext)
+            if not safe_name:
+                self.send_json(400, {
+                    "status": "error",
+                    "message": f"Extensão inválida. Envie estritamente um arquivo {expected_ext}."
+                })
+                return
+
+            file_bytes = self.rfile.read(content_length)
+            is_valid, reason = validate_binary_asset(file_bytes, upload_type)
+            if not is_valid:
+                self.send_json(400, {"status": "error", "message": reason})
+                return
+
+            try:
+                with upload_file_lock:
+                    if upload_type == 'model':
+                        os.makedirs(MODELS_DIR, exist_ok=True)
+                        final_name = safe_name
+                        dest_path = os.path.join(MODELS_DIR, final_name)
+                    else:
+                        os.makedirs(TARGETS_DIR, exist_ok=True)
+                        final_name = 'targets.mind'
+                        dest_path = os.path.join(TARGETS_DIR, final_name)
+
+                    tmp_path = f"{dest_path}.tmp"
+                    with open(tmp_path, 'wb') as f:
+                        f.write(file_bytes)
+                    os.replace(tmp_path, dest_path)
+
+                print(f" [CMS Upload] Ativo salvo: {final_name} ({len(file_bytes)} bytes)")
+                self.send_json(200, {
+                    "status": "success",
+                    "uploadType": upload_type,
+                    "fileName": final_name,
+                    "sizeBytes": len(file_bytes),
+                    "message": f"Arquivo '{final_name}' enviado e validado com sucesso!"
+                })
+            except Exception as e:
+                self.send_json(500, {"status": "error", "message": f"Falha ao gravar arquivo: {str(e)}"})
+            return
+
         post_data = self.rfile.read(content_length) if content_length > 0 else b''
 
         # ----------------------------------------------------------------------
