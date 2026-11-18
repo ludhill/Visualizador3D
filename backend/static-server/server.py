@@ -27,10 +27,11 @@ MDNS_HOSTNAME = "cvtespacial.local"
 CANDIDATE_PORTS = [8080, 8443, 8081, 8888]
 ACTIVE_PORT = 8080
 ACTIVE_PROTOCOL = "https"
+SELECTED_IP = None  # Definido via UI (/api/select-ip) ou argumento --ip
 
-MAX_GLB_BYTES = 25 * 1024 * 1024     # 25 MB
-MAX_MIND_BYTES = 15 * 1024 * 1024    # 15 MB
-MIN_FREE_DISK_BYTES = 100 * 1024 * 1024  # 100 MB livres exigidos para upload
+MAX_GLB_BYTES = 25 * 1024 * 1024          # 25 MB
+MAX_MIND_BYTES = 15 * 1024 * 1024         # 15 MB
+MIN_FREE_DISK_BYTES = 100 * 1024 * 1024   # 100 MB livres exigidos para upload
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 JSON_PATH = os.path.join(BASE_DIR, 'storage', 'db', 'data.json')
@@ -56,24 +57,93 @@ BLOCKED_EXTENSIONS = ('.py', '.pem', '.key', '.sh', '.bat', '.md', '.gitignore',
 
 
 # ==============================================================================
-# UTILITÁRIOS DE REDE, SSL E PERSISTÊNCIA RESILIENTE
+# UTILITÁRIOS DE REDE (MULTI-IPV4), SSL E PERSISTÊNCIA RESILIENTE
 # ==============================================================================
-def get_local_ip():
-    """
-    Retorna IPv4 privado válido da rede local, ignorando loopback (127.*)
-    e endereço automático sem roteador/APIPA (169.254.*).
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+def is_valid_ipv4(ip_str):
+    """Valida se a string possui formato estrito A.B.C.D de IPv4."""
+    if not ip_str or len(ip_str.split('.')) != 4:
+        return False
     try:
-        s.connect(('10.255.255.255', 1))
-        ip = s.getsockname()[0]
-        if ip.startswith(('127.', '169.254.')):
-            return '127.0.0.1'
-        return ip
+        socket.inet_aton(ip_str)
+        return True
+    except OSError:
+        return False
+
+
+def get_available_interfaces():
+    """
+    Lista todas as interfaces IPv4 ativas da máquina (ex: Wi-Fi e Ethernet 2),
+    ignorando loopback (127.*) e endereço automático sem roteador (169.254.*),
+    priorizando adaptadores sem fio (Wi-Fi / WLAN).
+    """
+    interfaces = []
+    seen_ips = set()
+
+    # 1. Windows: captura nome amigável do adaptador + IPv4 via ipconfig
+    if os.name == 'nt':
+        try:
+            out = subprocess.check_output(['ipconfig'], stderr=subprocess.DEVNULL)
+            text = out.decode('cp850', errors='replace')
+            current_adapter = "Adaptador de Rede"
+
+            for line in text.splitlines():
+                stripped = line.strip()
+                if line and not line.startswith(' ') and stripped.endswith(':'):
+                    current_adapter = stripped[:-1]
+                elif 'IPv4' in stripped and ':' in stripped:
+                    ip = stripped.split(':', 1)[1].strip()
+                    ip = re.sub(r'\(.*?\)', '', ip).strip()
+                    if is_valid_ipv4(ip) and not ip.startswith(('127.', '169.254.')) and ip not in seen_ips:
+                        seen_ips.add(ip)
+                        interfaces.append({"name": current_adapter, "ip": ip})
+        except Exception:
+            pass
+
+    # 2. Fallback multiplataforma (Linux / macOS / Windows) via socket
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if is_valid_ipv4(ip) and not ip.startswith(('127.', '169.254.')) and ip not in seen_ips:
+                seen_ips.add(ip)
+                interfaces.append({"name": "Interface Local", "ip": ip})
     except Exception:
-        return '127.0.0.1'
-    finally:
-        s.close()
+        pass
+
+    # 3. Garante detecção via rota padrão caso nenhuma interface tenha sido listada
+    if not interfaces:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+            if is_valid_ipv4(ip) and not ip.startswith(('127.', '169.254.')):
+                interfaces.append({"name": "Rede Principal", "ip": ip})
+        except Exception:
+            pass
+        finally:
+            s.close()
+
+    # Ordena: Wi-Fi primeiro (0), Ethernet/cabo depois (1), adaptadores virtuais por último (2)
+    def sort_priority(item):
+        label = item["name"].lower()
+        if any(k in label for k in ('wi-fi', 'wifi', 'wlan', 'sem fio', 'wireless')):
+            return 0
+        if any(k in label for k in ('vethernet', 'wsl', 'virtual', 'vmware', 'docker', 'loopback', 'hyper-v')):
+            return 2
+        return 1
+
+    interfaces.sort(key=sort_priority)
+    return interfaces
+
+
+def get_local_ip():
+    """Retorna o IP selecionado manualmente ou o primeiro adaptador prioritário."""
+    if SELECTED_IP and is_valid_ipv4(SELECTED_IP):
+        return SELECTED_IP
+
+    interfaces = get_available_interfaces()
+    if interfaces:
+        return interfaces[0]["ip"]
+    return '127.0.0.1'
 
 
 def read_json_resilient(file_path, default_factory):
@@ -356,8 +426,9 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"status": "ok", "port": ACTIVE_PORT})
             return
 
-        # 4. Rota de Descoberta de IP, Porta Ativa e URL do QR Code
+        # 4. Rota de Descoberta de Interfaces IPv4, Porta Ativa e URL do QR Code
         if clean_path == '/api/server-info':
+            interfaces = get_available_interfaces()
             local_ip = get_local_ip()
             network_online = local_ip != '127.0.0.1'
             webar_url = f"{ACTIVE_PROTOCOL}://{local_ip}:{ACTIVE_PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
@@ -374,6 +445,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
 
             self.send_json(200, {
                 "ip": local_ip,
+                "interfaces": interfaces,
                 "port": ACTIVE_PORT,
                 "protocol": ACTIVE_PROTOCOL,
                 "networkOnline": network_online,
@@ -538,7 +610,6 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 })
                 return
 
-            # Verifica espaço livre em disco antes de gravar
             try:
                 free_bytes = shutil.disk_usage(BASE_DIR).free
                 if free_bytes < (content_length + MIN_FREE_DISK_BYTES):
@@ -596,6 +667,29 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             return
 
         post_data = self.rfile.read(content_length) if content_length > 0 else b''
+
+        # ----------------------------------------------------------------------
+        # Seleção Manual de Interface / IPv4 Ativo (para máquinas multi-placa)
+        # ----------------------------------------------------------------------
+        if clean_path == '/api/select-ip':
+            global SELECTED_IP
+            try:
+                body = json.loads(post_data.decode('utf-8')) if post_data else {}
+                chosen_ip = str(body.get("ip", "")).strip()
+                if not is_valid_ipv4(chosen_ip) or chosen_ip.startswith(('127.', '169.254.')):
+                    raise ValueError("IPv4 inválido.")
+
+                SELECTED_IP = chosen_ip
+                new_url = f"{ACTIVE_PROTOCOL}://{SELECTED_IP}:{ACTIVE_PORT}/frontend/ar-engine/index.html?token={API_TOKEN}"
+                print(f" [Rede] IPv4 ativo selecionado: {SELECTED_IP}")
+                self.send_json(200, {
+                    "status": "success",
+                    "ip": SELECTED_IP,
+                    "webArUrl": new_url
+                })
+            except Exception:
+                self.send_json(400, {"status": "error", "message": "Endereço IPv4 inválido."})
+            return
 
         # ----------------------------------------------------------------------
         # Validação do PIN Administrativo (com limite de tentativas por IP)
@@ -743,6 +837,14 @@ def open_presenter_panel(protocol, port):
 
 
 if __name__ == '__main__':
+    # Suporte opcional a fixação de IP via terminal: python server.py --ip 192.168.0.27
+    if '--ip' in sys.argv:
+        idx = sys.argv.index('--ip')
+        if idx + 1 < len(sys.argv):
+            cli_ip = sys.argv[idx + 1].strip()
+            if is_valid_ipv4(cli_ip):
+                SELECTED_IP = cli_ip
+
     try:
         httpd, bound_port, existing_scheme = bind_available_port(CMSRequestHandler)
     except RuntimeError as err:
@@ -751,7 +853,6 @@ if __name__ == '__main__':
 
     ACTIVE_PORT = bound_port
 
-    # Se outra instância do próprio WebAR-CMS já estiver rodando, apenas abre o painel e sai
     if httpd is None and existing_scheme:
         print(f" [INFO] Servidor WebAR-CMS já está ativo na porta {ACTIVE_PORT}. Abrindo painel...")
         open_presenter_panel(existing_scheme, ACTIVE_PORT)
@@ -760,12 +861,17 @@ if __name__ == '__main__':
     httpd_instance = httpd
     ACTIVE_PROTOCOL = configure_ssl_with_recovery(httpd)
 
+    interfaces = get_available_interfaces()
     local_ip = get_local_ip()
+
     print(f" Servidor {ACTIVE_PROTOCOL.upper()} WebAR-CMS ativo na porta {ACTIVE_PORT}...")
     if local_ip == '127.0.0.1':
         print(" [AVISO] Nenhuma rede Wi-Fi/Ethernet ativa detectada (IP 127.0.0.1). Conecte-se ao Wi-Fi do evento.")
     else:
-        print(f" IP Local detectado: {local_ip}")
+        print(f" IPv4 Principal selecionado: {local_ip}")
+        if len(interfaces) > 1:
+            others = ", ".join(f"{i['name']} ({i['ip']})" for i in interfaces)
+            print(f" Interfaces disponíveis: {others}")
     print(f" Painel QR Code: {ACTIVE_PROTOCOL}://localhost:{ACTIVE_PORT}/cms")
 
     timer = threading.Timer(1.2, open_presenter_panel, args=[ACTIVE_PROTOCOL, ACTIVE_PORT])

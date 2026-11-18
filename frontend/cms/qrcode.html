@@ -54,6 +54,7 @@
       color: #ffffff;
     }
     .hud-hidden .presenter-hud { display: none; }
+    .hud-hidden .network-box { display: none; }
     .restore-hud-btn {
       position: fixed;
       top: 12px;
@@ -126,6 +127,33 @@
       line-height: 1.3;
     }
     .error-text { color: #f87171 !important; border-color: rgba(248, 113, 113, 0.3); }
+    .network-box {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid #334155;
+      text-align: left;
+    }
+    .network-box label {
+      display: block;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .network-select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 8px;
+      background-color: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      font-size: 0.84rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .network-select:focus {
+      border-color: #38bdf8;
+    }
   </style>
 </head>
 <body>
@@ -153,26 +181,78 @@
     </div>
 
     <div class="url-container" id="url-text">Detectando IP local do servidor...</div>
+
+    <div class="network-box">
+      <label for="ip-selector">Interface de Rede (IPv4 para os celulares):</label>
+      <select id="ip-selector" class="network-select">
+        <option value="">Carregando adaptadores...</option>
+      </select>
+    </div>
   </div>
 
   <script src="/frontend/vendor/qrious.min.js?v=2"></script>
   <script>
+    let serverMeta = null;
+    let activeIp = '';
+
+    function renderQRForIp(ip) {
+      if (!serverMeta || !ip) return;
+      const protocol = serverMeta.protocol || 'https';
+      const url = `${protocol}://${ip}:${serverMeta.port}/frontend/ar-engine/index.html?token=${serverMeta.token}`;
+
+      const urlTextElement = document.getElementById('url-text');
+      const testArLink = document.getElementById('btn-test-ar');
+
+      urlTextElement.classList.remove('error-text');
+      urlTextElement.innerText = url;
+      if (testArLink) testArLink.href = url;
+
+      new QRious({
+        element: document.getElementById('qrcode-box'),
+        value: url,
+        size: 220
+      });
+    }
+
+    async function applySelectedIp(ip) {
+      activeIp = ip;
+      localStorage.setItem('webar_preferred_ip', ip);
+      renderQRForIp(ip);
+
+      try {
+        await fetch('/api/select-ip', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-App-Token': serverMeta.token
+          },
+          body: JSON.stringify({ ip })
+        });
+      } catch (err) {
+        console.warn('Não foi possível sincronizar o IP com o servidor:', err);
+      }
+    }
+
+    function isValidIpv4(ip) {
+      const parts = ip.split('.');
+      if (parts.length !== 4) return false;
+      return parts.every(p => /^\d{1,3}$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
+    }
+
     async function initQRCode() {
       const urlTextElement = document.getElementById('url-text');
       const statusBadge = document.getElementById('status-badge');
       const statusTextElement = document.getElementById('status-text');
-      const testArLink = document.getElementById('btn-test-ar');
       const analyticsLink = document.getElementById('link-analytics');
+      const selector = document.getElementById('ip-selector');
 
       try {
         const response = await fetch('/api/server-info');
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
 
-        const data = await response.json();
-        urlTextElement.innerText = data.webArUrl;
-        testArLink.href = data.webArUrl;
+        serverMeta = await response.json();
 
-        if (data.paused) {
+        if (serverMeta.paused) {
           statusBadge.classList.add('paused');
           statusTextElement.innerText = 'EXPOSIÇÃO EM PAUSA';
         } else {
@@ -180,18 +260,63 @@
           statusTextElement.innerText = 'SERVIDOR ONLINE';
         }
 
-        // Oculta o acesso ao painel administrativo enquanto o IP estiver bloqueado
-        if (analyticsLink && data.adminLockedSeconds > 0) {
+        if (analyticsLink && serverMeta.adminLockedSeconds > 0) {
           analyticsLink.style.display = 'none';
           setTimeout(() => {
             analyticsLink.style.display = '';
-          }, data.adminLockedSeconds * 1000);
+          }, serverMeta.adminLockedSeconds * 1000);
         }
 
-        new QRious({
-          element: document.getElementById('qrcode-box'),
-          value: data.webArUrl,
-          size: 220
+        const interfaces = serverMeta.interfaces || [];
+        selector.innerHTML = '';
+
+        interfaces.forEach(iface => {
+          const opt = document.createElement('option');
+          opt.value = iface.ip;
+          opt.textContent = `${iface.name} (${iface.ip})`;
+          selector.appendChild(opt);
+        });
+
+        const manualOpt = document.createElement('option');
+        manualOpt.value = '__manual__';
+        manualOpt.textContent = 'Digitar IPv4 manualmente...';
+        selector.appendChild(manualOpt);
+
+        // Restaura preferência anterior se a interface ainda estiver ativa neste notebook
+        const savedIp = localStorage.getItem('webar_preferred_ip');
+        const initialIp = interfaces.some(i => i.ip === savedIp) ? savedIp : serverMeta.ip;
+
+        if (!interfaces.some(i => i.ip === initialIp)) {
+          const fallbackOpt = document.createElement('option');
+          fallbackOpt.value = initialIp;
+          fallbackOpt.textContent = `Ativo (${initialIp})`;
+          selector.insertBefore(fallbackOpt, manualOpt);
+        }
+
+        selector.value = initialIp;
+        await applySelectedIp(initialIp);
+
+        selector.addEventListener('change', async (e) => {
+          if (e.target.value === '__manual__') {
+            const typed = prompt('Digite o IPv4 da placa conectada aos celulares (ex: 192.168.0.27):', activeIp);
+            const cleaned = (typed || '').trim();
+            if (cleaned && isValidIpv4(cleaned)) {
+              let existingOpt = Array.from(selector.options).find(o => o.value === cleaned);
+              if (!existingOpt) {
+                existingOpt = document.createElement('option');
+                existingOpt.value = cleaned;
+                existingOpt.textContent = `Manual (${cleaned})`;
+                selector.insertBefore(existingOpt, manualOpt);
+              }
+              selector.value = cleaned;
+              await applySelectedIp(cleaned);
+            } else {
+              selector.value = activeIp;
+            }
+            return;
+          }
+
+          await applySelectedIp(e.target.value);
         });
       } catch (err) {
         console.error('Erro na leitura das informações do servidor:', err);
