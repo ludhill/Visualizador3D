@@ -43,6 +43,47 @@
       cursor: pointer; margin-top: 16px;
     }
 
+    /* Botão Flutuante para Alternar Visualização do Modal de Carregamento */
+    .hud-toggle-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 9600;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(15, 23, 42, 0.82);
+      color: #f1f5f9;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hud-toggle-btn:active {
+      transform: scale(0.96);
+    }
+    .hud-toggle-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 6px #22c55e;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    body.loader-hud-disabled .hud-toggle-dot {
+      background: #64748b;
+      box-shadow: none;
+    }
+    body.loader-hud-disabled #loader-hud {
+      display: none !important;
+    }
+
     /* Dica discreta enquanto os 4 Ls procuram um marcador */
     .scan-hint {
       position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
@@ -176,6 +217,12 @@
     <button id="btn-reconnect">Toque para Reativar Câmera</button>
   </div>
 
+  <!-- Botão Opcional para Exibir/Ocultar o Modal de Progresso -->
+  <button type="button" id="btn-toggle-loader" class="hud-toggle-btn" aria-pressed="true">
+    <span class="hud-toggle-dot"></span>
+    <span id="btn-toggle-loader-text">Carregamento: ON</span>
+  </button>
+
   <!-- Orientação durante busca pelos 4 Ls -->
   <div id="scan-hint" class="scan-hint">Aponte a câmera para a imagem de um foguete</div>
 
@@ -222,6 +269,91 @@
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
   </a-scene>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = 'webar_loader_hud_disabled';
+      const toggleBtn = document.getElementById('btn-toggle-loader');
+      const toggleText = document.getElementById('btn-toggle-loader-text');
+
+      function applyLoaderPreference(disabled) {
+        document.body.classList.toggle('loader-hud-disabled', disabled);
+        if (toggleBtn) toggleBtn.setAttribute('aria-pressed', String(!disabled));
+        if (toggleText) toggleText.innerText = disabled ? 'Carregamento: OFF' : 'Carregamento: ON';
+      }
+
+      const savedDisabled = localStorage.getItem(STORAGE_KEY) === '1';
+      applyLoaderPreference(savedDisabled);
+
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const nextDisabled = !document.body.classList.contains('loader-hud-disabled');
+          localStorage.setItem(STORAGE_KEY, nextDisabled ? '1' : '0');
+          applyLoaderPreference(nextDisabled);
+        });
+      }
+
+      // Garante que o HUD atinja 100% e feche assim que a malha 3D for montada na cena
+      let hideTimeout = null;
+      function completeAndCloseLoaderHUD() {
+        const hud = document.getElementById('loader-hud');
+        if (!hud || !hud.classList.contains('visible')) return;
+
+        const card = document.getElementById('loader-card');
+        const ringFill = document.getElementById('progress-ring-fill');
+        const fileLiquid = document.getElementById('file-liquid');
+        const linearFill = document.getElementById('linear-fill');
+        const statusEl = document.getElementById('loader-status');
+        const percentEl = document.getElementById('loader-percent');
+
+        if (card) card.style.setProperty('--stage-color', '#22c55e');
+        if (ringFill) ringFill.style.strokeDashoffset = '0';
+        if (fileLiquid) fileLiquid.style.height = '100%';
+        if (linearFill) linearFill.style.width = '100%';
+        if (statusEl) statusEl.innerText = 'Modelo 3D pronto!';
+        if (percentEl) percentEl.innerText = '100%';
+
+        if (hideTimeout) clearTimeout(hideTimeout);
+        hideTimeout = setTimeout(() => {
+          hud.classList.remove('visible');
+        }, 400);
+      }
+
+      function bindModelCompletion(el) {
+        if (!el || el.dataset.hudBound === '1') return;
+        el.dataset.hudBound = '1';
+
+        if (el.getObject3D && el.getObject3D('mesh')) {
+          completeAndCloseLoaderHUD();
+          return;
+        }
+
+        el.addEventListener('model-loaded', completeAndCloseLoaderHUD, { once: true });
+        el.addEventListener('object3dset', (ev) => {
+          if (ev.detail && ev.detail.type === 'mesh') {
+            completeAndCloseLoaderHUD();
+          }
+        });
+      }
+
+      const scene = document.querySelector('a-scene');
+      if (scene) {
+        const observer = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+              if (node.nodeType !== 1) return;
+              if (node.tagName === 'A-GLTF-MODEL') {
+                bindModelCompletion(node);
+              } else if (node.querySelectorAll) {
+                node.querySelectorAll('a-gltf-model').forEach(bindModelCompletion);
+              }
+            });
+          });
+        });
+        observer.observe(scene, { childList: true, subtree: true });
+      }
+    })();
+  </script>
 
   <script type="module" src="js/App.js"></script>
 </body>
