@@ -412,6 +412,20 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        if clean_path in (
+            '/dashboard',
+            '/controle',
+            '/dashboard-cms/controle.htm',
+            '/dashboard-cms/controle.html',
+            '/frontend/dashboard-cms/controle.htm',
+            '/frontend/cms/dashboard-cms/controle.htm',
+            '/frontend/cms/dashboard-cms/controle.html',
+        ):
+            self.send_response(302)
+            self.send_header('Location', f'/frontend/dashboard-cms/controle.html{query_string}')
+            self.end_headers()
+            return
+
         # 2. Blindagem de Arquivos Internos e Diretórios Sensíveis
         lower_path = clean_path.lower()
         if lower_path.startswith(BLOCKED_PREFIXES) or lower_path.endswith(BLOCKED_EXTENSIONS):
@@ -578,6 +592,7 @@ class CMSRequestHandler(SimpleHTTPRequestHandler):
                 return
 
         content_length = int(self.headers.get('Content-Length', 0))
+
 
         # ----------------------------------------------------------------------
         # Upload Dinâmico de Ativos (.glb e .mind) — Protegido por X-Admin-Pin
